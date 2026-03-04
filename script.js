@@ -124,6 +124,8 @@ async function carregarDadosUsuario() {
   try {
     const uid = usuarioAtual.id;
 
+    console.log("[HVP] Iniciando carregamento para uid:", uid);
+
     // Carrega tudo em paralelo para ser mais rápido
     const [prodRes, histRes, cliRes, cfgRes] = await Promise.all([
       supabase.from("produtos").select("*").eq("user_id", uid),
@@ -131,6 +133,16 @@ async function carregarDadosUsuario() {
       supabase.from("clientes").select("*").eq("user_id", uid),
       supabase.from("config").select("*").eq("user_id", uid).maybeSingle(),
     ]);
+
+    console.log("[HVP] produtos:", prodRes.error || `${(prodRes.data||[]).length} registros`);
+    console.log("[HVP] historico:", histRes.error || `${(histRes.data||[]).length} registros`);
+    console.log("[HVP] clientes:", cliRes.error || `${(cliRes.data||[]).length} registros`);
+    console.log("[HVP] config:", cfgRes.error || cfgRes.data);
+
+    // Se alguma query retornou erro, lança para o catch mostrar
+    if (prodRes.error) throw new Error("produtos: " + prodRes.error.message);
+    if (histRes.error) throw new Error("historico: " + histRes.error.message);
+    if (cliRes.error) throw new Error("clientes: " + cliRes.error.message);
 
     produtos = (prodRes.data || []).map(p => ({
       firestoreId: p.id,
