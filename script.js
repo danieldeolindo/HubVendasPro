@@ -930,9 +930,10 @@ async function finalizarPedido() {
   const itens=itensIds.map(id=>{const p=produtos.find(p=>p.id===Number(id));return{nome:p.nome,skuId:p.skuId,quantidade:carrinho[id],preco:p.preco};});
   const sub=calcularSubtotal(), desc=calcularDesconto(sub), total=Math.max(0,sub-desc);
   const pagamentos=getSplitFinal(pagamentosSelecionados,splitPagamento,total);
-  const clienteId=document.getElementById("clienteSelecionado")?.value||"";
-  const clienteNome=clienteId?clientes.find(c=>c.id===Number(clienteId))?.nome||"":"";
-  const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteId?Number(clienteId):null,clienteNome};
+  const clienteIdVal=document.getElementById("clienteSelecionado")?.value||"";
+  const clienteObj=clienteIdVal?clientes.find(c=>c.id===Number(clienteIdVal)):null;
+  const clienteNome=clienteObj?.nome||"";
+  const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteObj?.firestoreId||null,clienteNome};
   const fid = await fbSalvarVenda(venda);
   if (fid) { venda.firestoreId=fid; historico.push(venda); }
 
@@ -1252,7 +1253,7 @@ Object.assign(window, {
   // Vendas
   togglePagamento, onSplitInput, setTipoDesconto, finalizarPedido,
   limparCarrinho, removerDoCarrinho, alterarQtd, definirQtd,
-  selecionarCategoria, renderProdutos,
+  selecionarCategoria, renderProdutos, atualizarTotal,
   // Produtos
   salvarProduto, editarProduto, excluirProduto, cancelarEdicao,
   atualizarNomeArquivo, removerFotoProduto,
