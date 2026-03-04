@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="style.css">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- Supabase Client Library -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.4"></script>
 </head>
 <body>
 
@@ -209,276 +211,189 @@
               <span class="file-input-icon">📷</span>
               <span class="file-input-text" id="fotoNomeArquivo">Escolher imagem...</span>
             </label>
-            <input type="file" id="fotoProduto" accept="image/*" onchange="atualizarNomeArquivo(this)">
+            <input type="file" id="fotoProduto" accept="image/*" onchange="selecionarFoto()">
           </div>
-          <div class="foto-preview-wrap" id="fotoPrevisualizacao" style="display:none">
-            <img id="fotoPreviewImg" src="" alt="preview">
-            <button class="foto-remove-btn" onclick="removerFotoProduto()" title="Remover foto">✕</button>
+          <div class="foto-preview" id="fotoPrevisualizacao" style="display:none;margin-top:12px">
+            <img id="fotoPreviewImg" src="" alt="Preview" style="max-width:100%;max-height:200px;border-radius:var(--radius-sm);">
           </div>
         </div>
-        <div class="form-actions">
-          <button class="btn-primary" onclick="salvarProduto()">Salvar produto</button>
-          <button class="btn-ghost" onclick="cancelarEdicao()" id="btnCancelarEdicao" style="display:none">Cancelar</button>
+        <div class="form-row">
+          <button class="btn-primary flex1" onclick="salvarProduto()">💾 Salvar</button>
+          <button class="btn-ghost flex1" id="btnCancelarEdicao" style="display:none" onclick="cancelarEdicao()">Cancelar</button>
         </div>
       </div>
-      <div id="listaProdutosAdmin" class="produtos-grid"></div>
+      <div id="listaProdutosAdmin" class="admin-list"></div>
+    </section>
+
+    <!-- GASTOS -->
+    <section id="page-gastos" class="page">
+      <div class="page-header">
+        <div><h1 class="page-title">Gastos</h1><p class="page-sub">Controle suas despesas</p></div>
+      </div>
+      <div class="section-card">
+        <p class="section-label" id="gastoFormLabel">Novo gasto</p>
+        <div class="form-row">
+          <div class="field-group flex1"><label>Descrição</label><input type="text" id="gastoDescricao" placeholder="Ex: Aluguel"></div>
+        </div>
+        <div class="form-row">
+          <div class="field-group flex1"><label>Valor (R$)</label><input type="number" id="gastoValor" placeholder="0,00"></div>
+          <div class="field-group w120"><label>Mês</label><input type="number" id="gastoMes" min="1" max="12" value="1"></div>
+          <div class="field-group w120"><label>Ano</label><input type="number" id="gastoAno" value="2024"></div>
+        </div>
+        <div class="form-row">
+          <label style="display:flex;align-items:center;gap:8px;flex:1"><input type="checkbox" id="gastoRecorrente"> Recorrente</label>
+          <label style="display:flex;align-items:center;gap:8px;flex:1"><input type="checkbox" id="gastoPago"> Pago</label>
+        </div>
+        <div class="form-row">
+          <button class="btn-primary flex1" onclick="salvarGasto()">💾 Salvar</button>
+          <button class="btn-ghost flex1" id="btnCancelarGasto" style="display:none" onclick="cancelarEdicaoGasto()">Cancelar</button>
+        </div>
+      </div>
+      <div id="listaGastos" class="admin-list"></div>
     </section>
 
     <!-- CLIENTES -->
     <section id="page-clientes" class="page">
       <div class="page-header">
-        <div><h1 class="page-title">Clientes</h1><p class="page-sub">Cadastre e gerencie sua base de clientes</p></div>
+        <div><h1 class="page-title">Clientes</h1><p class="page-sub">Gerencie seus clientes</p></div>
       </div>
       <div class="section-card">
         <p class="section-label" id="clienteFormLabel">Novo cliente</p>
         <div class="form-row">
-          <div class="field-group flex1"><label>Nome</label><input type="text" id="clienteNome" placeholder="Nome completo"></div>
-          <div class="field-group w160"><label>Telefone / WhatsApp</label><input type="text" id="clienteTelefone" placeholder="(00) 00000-0000" oninput="this.value=formatarTelefone(this.value)" maxlength="15"></div>
+          <div class="field-group flex1"><label>Nome</label><input type="text" id="clienteNome" placeholder="Ex: João Silva"></div>
         </div>
         <div class="form-row">
-          <div class="field-group w160"><label>CPF</label><input type="text" id="clienteCpf" placeholder="000.000.000-00" oninput="this.value=formatarCpf(this.value)" maxlength="14"></div>
-          <div class="field-group flex1"><label>Email</label><input type="email" id="clienteEmail" placeholder="cliente@email.com"></div>
+          <div class="field-group flex1"><label>Telefone</label><input type="text" id="clienteTelefone" placeholder="(11) 99999-9999"></div>
+          <div class="field-group flex1"><label>CPF</label><input type="text" id="clienteCpf" placeholder="000.000.000-00"></div>
         </div>
         <div class="form-row">
-          <div class="field-group flex1"><label>Endereço</label><input type="text" id="clienteEndereco" placeholder="Rua, número, bairro, cidade"></div>
+          <div class="field-group flex1"><label>Email</label><input type="email" id="clienteEmail" placeholder="email@example.com"></div>
+          <div class="field-group flex1"><label>Endereço</label><input type="text" id="clienteEndereco" placeholder="Rua, número, cidade"></div>
         </div>
-        <p style="font-size:12px;color:var(--text3);margin-bottom:12px">Todos os campos são opcionais. Ao menos um deve ser preenchido.</p>
-        <div class="form-actions">
-          <button class="btn-primary" onclick="salvarCliente()">Salvar cliente</button>
-          <button class="btn-ghost" onclick="cancelarEdicaoCliente()" id="btnCancelarCliente" style="display:none">Cancelar</button>
+        <div class="form-row">
+          <button class="btn-primary flex1" onclick="salvarCliente()">💾 Salvar</button>
+          <button class="btn-ghost flex1" id="btnCancelarCliente" style="display:none" onclick="cancelarEdicaoCliente()">Cancelar</button>
         </div>
       </div>
-      <!-- busca clientes -->
-      <div style="margin-bottom:16px">
-        <div class="search-wrap" style="max-width:340px">
+      <div class="section-card">
+        <p class="section-label">Buscar cliente</p>
+        <div class="search-wrap">
           <span class="search-icon">🔍</span>
-          <input type="text" id="buscaClientes" class="input-busca" placeholder="Buscar cliente..." oninput="renderClientes()">
+          <input type="text" id="buscaClientes" class="input-busca" placeholder="Buscar por nome, telefone, CPF ou email..." oninput="renderClientes()">
         </div>
       </div>
-      <div id="listaClientes"></div>
+      <div id="listaClientes" class="admin-list"></div>
     </section>
 
     <!-- HISTÓRICO -->
     <section id="page-historico" class="page">
       <div class="page-header">
-        <div><h1 class="page-title">Histórico</h1><p class="page-sub">Registro de todas as vendas</p></div>
-        <div class="total-badge green">
-          <span class="total-label">Balanço filtrado</span>
-          <span class="total-value">R$ <span id="balanco">0,00</span></span>
-        </div>
+        <div><h1 class="page-title">Histórico de Vendas</h1><p class="page-sub">Consulte suas transações</p></div>
       </div>
-      <div class="section-card historico-filtros-card">
+      <div class="section-card">
         <p class="section-label">Filtrar por período</p>
-        <div class="historico-filtros">
-          <button class="btn-filtro-periodo ativo" onclick="setFiltroHistorico('hoje')" id="filtro-hoje">Hoje</button>
-          <button class="btn-filtro-periodo" onclick="setFiltroHistorico('semana')" id="filtro-semana">7 dias</button>
-          <button class="btn-filtro-periodo" onclick="setFiltroHistorico('mes')" id="filtro-mes">30 dias</button>
-          <button class="btn-filtro-periodo" onclick="setFiltroHistorico('tudo')" id="filtro-tudo">Tudo</button>
-          <div class="filtro-custom">
-            <input type="date" id="filtroDataInicio" onchange="setFiltroHistorico('custom')">
-            <span>até</span>
-            <input type="date" id="filtroDataFim" onchange="setFiltroHistorico('custom')">
-          </div>
+        <div class="form-row">
+          <button class="btn-filter" id="filtro-hoje" onclick="setFiltroHistorico('hoje')">Hoje</button>
+          <button class="btn-filter" id="filtro-semana" onclick="setFiltroHistorico('semana')">Semana</button>
+          <button class="btn-filter" id="filtro-mes" onclick="setFiltroHistorico('mes')">Mês</button>
+          <button class="btn-filter" id="filtro-custom" onclick="setFiltroHistorico('custom')">Personalizado</button>
+        </div>
+        <div id="filtroCustom" style="display:none;margin-top:12px;display:flex;gap:12px">
+          <input type="date" id="filtroDataInicio" onchange="renderHistorico()">
+          <input type="date" id="filtroDataFim" onchange="renderHistorico()">
         </div>
       </div>
-      <div id="listaHistorico"></div>
+      <div id="listaHistorico" class="admin-list"></div>
     </section>
 
     <!-- RELATÓRIOS -->
     <section id="page-relatorios" class="page">
       <div class="page-header">
-        <div><h1 class="page-title">Relatórios</h1><p class="page-sub">Análise detalhada das suas vendas</p></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn-primary" onclick="exportarRelPDF()">📄 Baixar PDF</button>
-          <button class="btn-ghost" onclick="exportarCSV()">⬇ Exportar CSV</button>
-        </div>
+        <div><h1 class="page-title">Relatórios</h1><p class="page-sub">Análise de vendas e desempenho</p></div>
       </div>
       <div class="section-card">
         <p class="section-label">Período do relatório</p>
-        <div class="historico-filtros">
-          <button class="btn-filtro-periodo ativo" onclick="setFiltroRelatorio('hoje')" id="rel-hoje">Hoje</button>
-          <button class="btn-filtro-periodo" onclick="setFiltroRelatorio('semana')" id="rel-semana">7 dias</button>
-          <button class="btn-filtro-periodo" onclick="setFiltroRelatorio('mes')" id="rel-mes">30 dias</button>
-          <button class="btn-filtro-periodo" onclick="setFiltroRelatorio('tudo')" id="rel-tudo">Tudo</button>
-          <div class="filtro-custom">
-            <input type="date" id="relDataInicio" onchange="setFiltroRelatorio('custom')">
-            <span>até</span>
-            <input type="date" id="relDataFim" onchange="setFiltroRelatorio('custom')">
-          </div>
+        <div class="form-row">
+          <button class="btn-filter" id="rel-hoje" onclick="setFiltroRelatorio('hoje')">Hoje</button>
+          <button class="btn-filter" id="rel-semana" onclick="setFiltroRelatorio('semana')">Semana</button>
+          <button class="btn-filter" id="rel-mes" onclick="setFiltroRelatorio('mes')">Mês</button>
+          <button class="btn-filter" id="rel-custom" onclick="setFiltroRelatorio('custom')">Personalizado</button>
+        </div>
+        <div id="relCustom" style="display:none;margin-top:12px;display:flex;gap:12px">
+          <input type="date" id="relDataInicio" onchange="renderRelatorios()">
+          <input type="date" id="relDataFim" onchange="renderRelatorios()">
         </div>
       </div>
-      <div class="kpi-grid" id="relKpiGrid"></div>
-      <div class="dash-grid">
-        <div class="section-card"><p class="section-label">Receita por forma de pagamento</p><div id="relPagamentos"></div></div>
-        <div class="section-card"><p class="section-label">Produtos mais vendidos no período</p><div id="relTopProdutos"></div></div>
-      </div>
-      <div class="section-card">
-        <p class="section-label">Comprovantes individuais</p>
-        <p style="font-size:13px;color:var(--text3);margin-bottom:14px">Imprima ou baixe o comprovante de qualquer venda</p>
-        <div id="relListaVendas"></div>
-      </div>
+      <div id="relatoriosContent"></div>
     </section>
 
     <!-- CONFIGURAÇÕES -->
     <section id="page-configuracoes" class="page">
       <div class="page-header">
-        <div><h1 class="page-title">Configurações</h1><p class="page-sub">Personalize sua conta e experiência</p></div>
+        <div><h1 class="page-title">Configurações</h1><p class="page-sub">Personalize seu aplicativo</p></div>
       </div>
-      <div class="section-card config-card identity-card">
-        <div class="config-card-header">
-          <span class="config-icon">🏪</span>
-          <div><p class="config-title">Identidade da Loja</p><p class="config-desc">Avatar, nome e estilo visual do seu negócio</p></div>
+      <div class="section-card">
+        <p class="section-label">Dados da Loja</p>
+        <div class="form-row">
+          <div class="field-group flex1"><label>Nome da Loja</label><input type="text" id="configNomeLoja" placeholder="Ex: Minha Loja"></div>
+          <div class="field-group flex1"><label>Cor Principal</label><input type="color" id="configCor"></div>
         </div>
-        <div class="identity-hero">
-          <div class="identity-avatar-wrap">
-            <div class="identity-avatar" id="identityAvatar">
-              <img id="avatarPreviewImg" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:50%;">
-              <span id="avatarPreviewLetra">U</span>
-            </div>
-            <label class="identity-avatar-edit" for="fotoPerfilInput" title="Trocar foto">📷</label>
-            <input type="file" id="fotoPerfilInput" accept="image/*" style="display:none" onchange="atualizarFotoPerfil(this)">
-          </div>
-          <div class="identity-info">
-            <div class="identity-logo-preview">
-              <div class="logo-hvp small"><span class="hvp-hub">Hub</span><span class="hvp-vendas">Vendas</span><span class="hvp-pro">Pro</span></div>
-              <p class="loja-preview-nome" id="lojaPreviewNome"></p>
-            </div>
-            <p class="identity-email" id="identityEmail"></p>
-            <button class="btn-ghost btn-sm-remove-avatar" onclick="removerFotoPerfil()">Remover foto</button>
+        <div class="form-row">
+          <div class="field-group flex1">
+            <label>Fonte</label>
+            <select id="configFonte">
+              <option value="jakarta">Plus Jakarta Sans</option>
+              <option value="mono">DM Mono</option>
+            </select>
           </div>
         </div>
-        <div class="identity-divider"></div>
-        <div class="field-group" style="margin-bottom:14px">
-          <label>Nome da loja <span style="color:var(--text3);font-weight:400">(opcional)</span></label>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <input type="text" id="nomeLoja" placeholder="Ex: Lanchonete do João" style="flex:1;min-width:180px" oninput="atualizarPreviewLoja()">
-            <button class="btn-primary" onclick="salvarNomeLoja()">Salvar</button>
-          </div>
-        </div>
-        <div class="loja-config-grid">
-          <div>
-            <p class="section-label" style="margin-bottom:10px">Cor do nome</p>
-            <div class="color-swatches" id="lojaColorSwatches"></div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-              <label style="font-size:12px;color:var(--text3);font-weight:600">Personalizada:</label>
-              <input type="color" id="lojaCorCustom" value="#00bf63" style="width:34px;height:34px;border:none;border-radius:6px;cursor:pointer;padding:2px;background:transparent" oninput="selecionarCorLoja(this.value,true)">
-            </div>
-          </div>
-          <div>
-            <p class="section-label" style="margin-bottom:10px">Fonte do nome</p>
-            <div class="font-opcoes" id="lojaFontOpcoes"></div>
-          </div>
+        <div class="form-row">
+          <button class="btn-primary flex1" onclick="salvarConfiguracao()">💾 Salvar</button>
         </div>
       </div>
-      <div class="section-card config-card">
-        <div class="config-card-header">
-          <span class="config-icon">🎨</span>
-          <div><p class="config-title">Aparência</p><p class="config-desc">Escolha entre o modo claro e escuro</p></div>
-        </div>
-        <div class="tema-opcoes">
-          <button class="btn-tema" id="tema-claro" onclick="definirTema('light')"><span class="tema-icon">☀️</span><span>Claro</span></button>
-          <button class="btn-tema" id="tema-escuro" onclick="definirTema('dark')"><span class="tema-icon">🌙</span><span>Escuro</span></button>
+      <div class="section-card">
+        <p class="section-label">Tema</p>
+        <div class="form-row">
+          <button class="btn-filter" id="tema-light" onclick="setTema('light')">☀️ Claro</button>
+          <button class="btn-filter" id="tema-dark" onclick="setTema('dark')">🌙 Escuro</button>
         </div>
       </div>
-      <div class="section-card config-card">
-        <div class="config-card-header">
-          <span class="config-icon">☰</span>
-          <div><p class="config-title">Ordem do Menu</p><p class="config-desc">Arraste os itens para reorganizar</p></div>
+      <div class="section-card">
+        <p class="section-label">Conta</p>
+        <div class="form-row">
+          <button class="btn-ghost flex1" onclick="abrirModalMudarSenha()">🔐 Alterar Senha</button>
+          <button class="btn-ghost flex1" onclick="logout()" style="color:var(--red)">↩ Sair</button>
         </div>
-        <div class="menu-order-list" id="menuOrderList"></div>
-        <button class="btn-ghost" style="margin-top:12px" onclick="resetarOrdemMenu()">↺ Restaurar padrão</button>
-      </div>
-      <div class="section-card config-card">
-        <div class="config-card-header">
-          <span class="config-icon">🔒</span>
-          <div><p class="config-title">Trocar Senha</p><p class="config-desc">Atualize sua senha de acesso</p></div>
-        </div>
-        <div class="field-group"><label>Senha atual</label>
-          <div class="input-group"><input type="password" id="senhaAtual" placeholder="••••••••"><span class="toggle-senha" onclick="toggleSenha('senhaAtual',this)">👁</span></div>
-        </div>
-        <div class="field-group"><label>Nova senha</label>
-          <div class="input-group"><input type="password" id="novaSenhaConfig" placeholder="Mínimo 6 caracteres"><span class="toggle-senha" onclick="toggleSenha('novaSenhaConfig',this)">👁</span></div>
-        </div>
-        <div class="field-group"><label>Confirmar nova senha</label>
-          <div class="input-group"><input type="password" id="confirmarSenhaConfig" placeholder="Repita a nova senha"><span class="toggle-senha" onclick="toggleSenha('confirmarSenhaConfig',this)">👁</span></div>
-        </div>
-        <button class="btn-primary" onclick="trocarSenha()">Atualizar senha</button>
       </div>
     </section>
 
   </main>
+
 </div>
 
-<!-- MODAL COMPROVANTE -->
-<div id="modalComprovante" class="modal-overlay hidden" onclick="if(event.target===this)fecharComprovante()">
-  <div class="modal-box comprovante-modal">
-    <div id="comprovanteConteudo" class="comprovante-wrap"></div>
-    <div class="comprovante-acoes">
-      <button class="btn-primary" onclick="imprimirComprovante()">🖨 Imprimir</button>
-      <button class="btn-ghost"   onclick="baixarComprovantePDF()">⬇ Baixar PDF</button>
-      <button class="btn-ghost"   onclick="fecharComprovante()">✕ Fechar</button>
+<!-- Modal para mudar senha -->
+<div id="modalMudarSenha" class="modal hidden">
+  <div class="modal-content">
+    <h2>Alterar Senha</h2>
+    <div class="field-group">
+      <label>Senha Atual</label>
+      <input type="password" id="senhaAtual" placeholder="••••••••">
+    </div>
+    <div class="field-group">
+      <label>Nova Senha</label>
+      <input type="password" id="novaSenhaModal" placeholder="••••••••">
+    </div>
+    <div class="field-group">
+      <label>Confirmar Nova Senha</label>
+      <input type="password" id="confirmarNovaSenhaModal" placeholder="••••••••">
+    </div>
+    <div class="form-row">
+      <button class="btn-primary flex1" onclick="mudarSenha()">Alterar</button>
+      <button class="btn-ghost flex1" onclick="fecharModalMudarSenha()">Cancelar</button>
     </div>
   </div>
 </div>
 
-<!-- MODAL EDITAR VENDA -->
-<div id="modalEditarVenda" class="modal-overlay hidden" onclick="if(event.target===this)fecharEditarVenda()">
-  <div class="modal-box editar-venda-modal">
-    <div class="modal-header">
-      <h3 class="modal-title">✏️ Editar Venda</h3>
-      <button class="modal-close" onclick="fecharEditarVenda()">✕</button>
-    </div>
-    <div id="editarVendaStep1">
-      <p style="font-size:14px;color:var(--text2);margin-bottom:16px">Digite a senha de administrador para editar esta venda.</p>
-      <div class="field-group"><label>Senha admin</label>
-        <div class="input-group">
-          <input type="password" id="senhaAdminEditar" placeholder="••••••••" onkeydown="if(event.key==='Enter')confirmarSenhaAdmin()">
-          <span class="toggle-senha" onclick="toggleSenha('senhaAdminEditar',this)">👁</span>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="btn-primary" onclick="confirmarSenhaAdmin()">Confirmar</button>
-        <button class="btn-ghost" onclick="fecharEditarVenda()">Cancelar</button>
-      </div>
-    </div>
-    <div id="editarVendaStep2" class="hidden">
-      <p class="section-label">Itens do pedido</p>
-      <div id="editarItensList" class="editar-itens-list"></div>
-      <div style="margin-top:10px;margin-bottom:4px">
-        <select id="editarProdutoSelect" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;color:var(--text);background:var(--input-bg);outline:none">
-          <option value="">+ Adicionar produto ao pedido...</option>
-        </select>
-      </div>
-      <p class="section-label" style="margin-top:20px">Desconto</p>
-      <div class="desconto-row">
-        <div class="desconto-tipo-wrap">
-          <button class="btn-desc-tipo" id="edit-desc-tipo-pct" onclick="setEditTipoDesconto('pct')">% Percentual</button>
-          <button class="btn-desc-tipo" id="edit-desc-tipo-val" onclick="setEditTipoDesconto('val')">R$ Valor fixo</button>
-        </div>
-        <div class="desconto-input-wrap">
-          <input type="number" id="editarDescontoInput" class="input-desconto" min="0" placeholder="0" oninput="atualizarEditarTotal()">
-          <span class="desconto-sufixo" id="editarDescontoSufixo">%</span>
-        </div>
-      </div>
-      <p class="section-label" style="margin-top:20px">Formas de pagamento</p>
-      <div class="pagamento-opcoes">
-        <button class="btn-pagamento" id="edit-pag-dinheiro" onclick="toggleEditPagamento('dinheiro')">💵 Dinheiro</button>
-        <button class="btn-pagamento" id="edit-pag-cartao"   onclick="toggleEditPagamento('cartao')">💳 Cartão</button>
-        <button class="btn-pagamento" id="edit-pag-pix"      onclick="toggleEditPagamento('pix')">⚡ Pix</button>
-      </div>
-      <div class="pagamento-split hidden" id="editarPagamentoSplit"></div>
-      <div class="editar-total-preview">
-        <span>Total recalculado:</span>
-        <span class="editar-total-value" id="editarTotalPreview">R$ 0,00</span>
-      </div>
-      <div class="form-actions" style="margin-top:20px">
-        <button class="btn-primary" onclick="salvarEdicaoVenda()">💾 Salvar alterações</button>
-        <button class="btn-ghost" onclick="fecharEditarVenda()">Cancelar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script type="module" src="script.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
