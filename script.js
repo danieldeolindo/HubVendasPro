@@ -124,13 +124,14 @@ async function carregarDadosUsuario() {
       .from("produtos").select("*").eq("user_id", uid);
     if (prodErr) throw prodErr;
     produtos = (prodData || []).map(p => ({
-      firestoreId: p.id,   // mantemos o alias para não alterar o restante do código
+      firestoreId: p.id,
       id:          p.internal_id || 0,
       skuId:       p.sku_id,
       nome:        p.nome,
       preco:       p.preco,
       categoria:   p.categoria || "",
       fotoKey:     p.foto_key || "",
+      fotoUrl:     p.foto_url || "",
     }));
 
     // Carrega histórico
@@ -200,6 +201,7 @@ async function fbSalvarProduto(produto) {
       preco:       produto.preco,
       categoria:   produto.categoria || "",
       foto_key:    produto.fotoKey || "",
+      foto_url:    produto.fotoUrl || "",
     };
     if (produto.firestoreId) {
       const { error } = await supabase.from("produtos").update(payload).eq("id", produto.firestoreId);
@@ -797,7 +799,8 @@ function _renderProdutos() {
   if (!filtrados.length){lista.innerHTML=`<div class="empty-state"><span>🔍</span>Nenhum produto encontrado.</div>`;return;}
   filtrados.forEach(prod=>{
     const qtd=carrinho[prod.id]||0;
-    const imgTag=prod.fotoKey?`<img src="${prod._fotoCache||""}" alt="${prod.nome}" data-foto-key="${prod.fotoKey}">`:""
+    const imgSrc = prod.fotoUrl || prod._fotoCache || "";
+    const imgTag = imgSrc ? `<img src="${imgSrc}" alt="${prod.nome}">` : (prod.fotoKey ? `<img src="" alt="${prod.nome}" data-foto-key="${prod.fotoKey}">` : "");
     const catTag=prod.categoria?`<span class="prod-categoria">${prod.categoria}</span>`:"";
     const card=document.createElement("div"); card.className="card-produto";
     card.innerHTML=`${imgTag}<span class="prod-sku">#${String(prod.skuId).padStart(4,"0")}</span>${catTag}<p class="prod-nome">${prod.nome}</p><p class="prod-preco">R$ ${fmt(prod.preco)}</p>
@@ -807,7 +810,7 @@ function _renderProdutos() {
         <button class="btn-qtd" onclick="alterarQtd(${prod.id},+1)">+</button>
       </div>`;
     lista.appendChild(card);
-    if (prod.fotoKey){carregarImagem(prod.fotoKey).then(b64=>{if(b64){prod._fotoCache=b64;lista.querySelectorAll(`img[data-foto-key="${prod.fotoKey}"]`).forEach(img=>img.src=b64);}});}
+    if (!prod.fotoUrl && prod.fotoKey){carregarImagem(prod.fotoKey).then(b64=>{if(b64){prod._fotoCache=b64;lista.querySelectorAll(`img[data-foto-key="${prod.fotoKey}"]`).forEach(img=>img.src=b64);}});}
   });
   atualizarTotal();
 }
@@ -817,12 +820,13 @@ function renderProdutosAdmin() {
   if (!produtos.length){lista.innerHTML=`<div class="empty-state"><span>📦</span>Nenhum produto ainda.</div>`;return;}
   produtos.forEach(prod=>{
     const catTag=prod.categoria?`<span class="prod-categoria">${prod.categoria}</span>`:"";
-    const imgTag=prod.fotoKey?`<img src="" alt="${prod.nome}" data-foto-key="${prod.fotoKey}">`:""
+    const imgSrcA = prod.fotoUrl || prod._fotoCache || "";
+    const imgTag = imgSrcA ? `<img src="${imgSrcA}" alt="${prod.nome}">` : (prod.fotoKey ? `<img src="" alt="${prod.nome}" data-foto-key="${prod.fotoKey}">` : "");
     const card=document.createElement("div");card.className="card-produto";
     card.innerHTML=`${imgTag}<span class="prod-sku">#${String(prod.skuId).padStart(4,"0")}</span>${catTag}<p class="prod-nome">${prod.nome}</p><p class="prod-preco">R$ ${fmt(prod.preco)}</p>
       <div class="acoes-admin"><button class="btn-sm btn-sm-edit" onclick="editarProduto(${prod.id})">✏️ Editar</button><button class="btn-sm btn-sm-del" onclick="excluirProduto(${prod.id})">🗑 Excluir</button></div>`;
     lista.appendChild(card);
-    if (prod.fotoKey){carregarImagem(prod.fotoKey).then(b64=>{if(b64){prod._fotoCache=b64;lista.querySelectorAll(`img[data-foto-key="${prod.fotoKey}"]`).forEach(img=>img.src=b64);}});}
+    if (!prod.fotoUrl && prod.fotoKey){carregarImagem(prod.fotoKey).then(b64=>{if(b64){prod._fotoCache=b64;lista.querySelectorAll(`img[data-foto-key="${prod.fotoKey}"]`).forEach(img=>img.src=b64);}});}
   });
 }
 
@@ -832,31 +836,49 @@ function definirQtd(id,val){const nova=Math.max(0,Math.floor(Number(val)));if(no
 async function salvarProduto() {
   const nome=document.getElementById("nomeProduto").value.trim(), preco=Number(document.getElementById("precoProduto").value), cat=document.getElementById("categoriaProduto").value.trim(), fi=document.getElementById("fotoProduto");
   if (!nome||isNaN(preco)||preco<=0){mostrarToast("Preencha nome e preço válidos.","erro");return;}
-  async function salvar(fotoKey) {
-    const idx=produtos.findIndex(p=>p.id===editandoId);
-    if (editandoId!==null&&idx!==-1) {
-      produtos[idx].nome=nome; produtos[idx].preco=preco; produtos[idx].categoria=cat;
-      if (fotoKey) produtos[idx].fotoKey=fotoKey;
+  mostrarLoading("Salvando produto...");
+  try {
+    // Upload de foto para o Supabase Storage (sincroniza entre dispositivos)
+    let fotoUrl = null;
+    if (fi && fi.files[0]) {
+      const ext = fi.files[0].name.split(".").pop();
+      const path = `${usuarioAtual.id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("fotos").upload(path, fi.files[0], { upsert: true });
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from("fotos").getPublicUrl(path);
+        fotoUrl = urlData.publicUrl;
+      } else {
+        console.warn("Erro no upload da foto:", upErr.message);
+      }
+    }
+    const idx = produtos.findIndex(p => p.id === editandoId);
+    if (editandoId !== null && idx !== -1) {
+      produtos[idx].nome = nome; produtos[idx].preco = preco; produtos[idx].categoria = cat;
+      if (fotoUrl) produtos[idx].fotoUrl = fotoUrl;
       await fbSalvarProduto(produtos[idx]);
-      editandoId=null;
+      editandoId = null;
     } else {
-      const novo={id:Date.now(),skuId:proximoSkuId(),nome,preco,categoria:cat,fotoKey:fotoKey||""};
-      const fid=await fbSalvarProduto(novo);
-      if (fid) { novo.firestoreId=fid; produtos.push(novo); }
+      const novo = { id: Date.now(), skuId: proximoSkuId(), nome, preco, categoria: cat, fotoUrl: fotoUrl || "", fotoKey: "" };
+      const fid = await fbSalvarProduto(novo);
+      if (fid) { novo.firestoreId = fid; produtos.push(novo); }
     }
     limparCampos(); renderProdutosAdmin(); atualizarSugestoesCategorias();
-    document.getElementById("adminFormLabel").textContent="Novo produto";
-    document.getElementById("btnCancelarEdicao").style.display="none";
+    document.getElementById("adminFormLabel").textContent = "Novo produto";
+    document.getElementById("btnCancelarEdicao").style.display = "none";
     mostrarToast("✅ Produto salvo!");
+  } catch(e) {
+    console.error("Erro ao salvar produto:", e);
+    mostrarToast("Erro ao salvar produto.","erro");
+  } finally {
+    esconderLoading();
   }
-  if (fi.files[0]){const k=`foto_${usuarioAtual.id}_${Date.now()}`,r=new FileReader();r.onload=async e=>{await salvarImagem(k,e.target.result);await salvar(k);};r.readAsDataURL(fi.files[0]);}
-  else await salvar(null);
 }
 
 function editarProduto(id){
   const p=produtos.find(p=>p.id===id);if(!p)return;
   document.getElementById("nomeProduto").value=p.nome; document.getElementById("precoProduto").value=p.preco; document.getElementById("categoriaProduto").value=p.categoria||"";
-  if(p.fotoKey){carregarImagem(p.fotoKey).then(b64=>{if(b64){const pw=document.getElementById("fotoPrevisualizacao"),pi=document.getElementById("fotoPreviewImg"),lbl=document.getElementById("fotoNomeArquivo");if(pw&&pi){pi.src=b64;pw.style.display="block";}if(lbl)lbl.textContent="Foto atual";}});}
+  if(p.fotoUrl){const pw=document.getElementById("fotoPrevisualizacao"),pi=document.getElementById("fotoPreviewImg"),lbl=document.getElementById("fotoNomeArquivo");if(pw&&pi){pi.src=p.fotoUrl;pw.style.display="block";}if(lbl)lbl.textContent="Foto atual";}
+  else if(p.fotoKey){carregarImagem(p.fotoKey).then(b64=>{if(b64){const pw=document.getElementById("fotoPrevisualizacao"),pi=document.getElementById("fotoPreviewImg"),lbl=document.getElementById("fotoNomeArquivo");if(pw&&pi){pi.src=b64;pw.style.display="block";}if(lbl)lbl.textContent="Foto atual";}});}
   document.getElementById("adminFormLabel").textContent=`Editando: ${p.nome}`;
   document.getElementById("btnCancelarEdicao").style.display="inline-flex";
   editandoId=id; document.querySelector(".section-card")?.scrollIntoView({behavior:"smooth"});
