@@ -116,14 +116,23 @@ function vendaNoIntervalo(v,{de,ate}) {
 ───────────────────────────────────────── */
 async function carregarDadosUsuario() {
   mostrarLoading("Sincronizando dados...");
+  // Timeout de segurança: se travar por mais de 10s, esconde o loading mesmo assim
+  const timeoutId = setTimeout(() => {
+    esconderLoading();
+    mostrarToast("Tempo esgotado ao sincronizar. Recarregue a página.","erro");
+  }, 10000);
   try {
     const uid = usuarioAtual.id;
 
-    // Carrega produtos
-    const { data: prodData, error: prodErr } = await supabase
-      .from("produtos").select("*").eq("user_id", uid);
-    if (prodErr) throw prodErr;
-    produtos = (prodData || []).map(p => ({
+    // Carrega tudo em paralelo para ser mais rápido
+    const [prodRes, histRes, cliRes, cfgRes] = await Promise.all([
+      supabase.from("produtos").select("*").eq("user_id", uid),
+      supabase.from("historico").select("*").eq("user_id", uid).order("created_at", { ascending: true }),
+      supabase.from("clientes").select("*").eq("user_id", uid),
+      supabase.from("config").select("*").eq("user_id", uid).maybeSingle(),
+    ]);
+
+    produtos = (prodRes.data || []).map(p => ({
       firestoreId: p.id,
       id:          p.internal_id || 0,
       skuId:       p.sku_id,
@@ -134,11 +143,7 @@ async function carregarDadosUsuario() {
       fotoUrl:     p.foto_url || "",
     }));
 
-    // Carrega histórico
-    const { data: histData, error: histErr } = await supabase
-      .from("historico").select("*").eq("user_id", uid).order("created_at", { ascending: true });
-    if (histErr) throw histErr;
-    historico = (histData || []).map(h => ({
+    historico = (histRes.data || []).map(h => ({
       firestoreId:  h.id,
       id:           h.internal_id,
       data:         h.data,
@@ -154,11 +159,7 @@ async function carregarDadosUsuario() {
       cancelada:    h.cancelada || false,
     }));
 
-    // Carrega clientes
-    const { data: cliData, error: cliErr } = await supabase
-      .from("clientes").select("*").eq("user_id", uid);
-    if (cliErr) throw cliErr;
-    clientes = (cliData || []).map(c => ({
+    clientes = (cliRes.data || []).map(c => ({
       firestoreId: c.id,
       id:          c.internal_id,
       nome:        c.nome || "",
@@ -168,9 +169,7 @@ async function carregarDadosUsuario() {
       endereco:    c.endereco || "",
     }));
 
-    // Carrega config
-    const { data: cfgData } = await supabase
-      .from("config").select("*").eq("user_id", uid).single();
+    const cfgData = cfgRes.data;
     if (cfgData) {
       lojaConfigAtual = cfgData.loja_config || {nome:"",cor:"#00bf63",fonte:"jakarta"};
       if (cfgData.tema) document.documentElement.setAttribute("data-theme", cfgData.tema);
@@ -179,8 +178,9 @@ async function carregarDadosUsuario() {
 
   } catch(e) {
     console.error("Erro ao carregar dados:", e);
-    mostrarToast("Erro ao carregar dados. Verifique a conexão.","erro");
+    mostrarToast("Erro ao carregar dados: " + e.message,"erro");
   } finally {
+    clearTimeout(timeoutId);
     esconderLoading();
   }
 }
@@ -504,13 +504,13 @@ function voltarLogin(){document.getElementById("registro").classList.add("hidden
 
 // Observador do estado de autenticação — ponto central de controle
 supabase.auth.onAuthStateChange(async (event, session) => {
-  // Só entra no painel em eventos reais de login ou sessão inicial
-  // TOKEN_REFRESHED e USER_UPDATED são disparados pela reautenticação (trocar senha, editar venda) — ignorar
+  // Ignora eventos que não representam login/logout real
   if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "MFA_CHALLENGE_VERIFIED") return;
+  // Ignora SIGNED_IN disparado por reautenticação (trocar senha, confirmar edição de venda)
+  // Detectamos isso verificando se o painel já está visível
+  if (event === "SIGNED_IN" && !document.getElementById("appShell").classList.contains("hidden")) return;
 
   if (session?.user) {
-    // Evita recarregar se já está logado no painel
-    if (usuarioAtual?.id === session.user.id) return;
     usuarioAtual = session.user;
     await carregarDadosUsuario();
     entrarNoPainel(session.user);
