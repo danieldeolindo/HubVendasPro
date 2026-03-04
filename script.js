@@ -501,19 +501,18 @@ function mostrarRegistro(){document.getElementById("login").classList.add("hidde
 function voltarLogin(){document.getElementById("registro").classList.add("hidden");document.getElementById("login").classList.remove("hidden");}
 
 // Observador do estado de autenticação — ponto central de controle
-let _sessaoIniciada = false;
 supabase.auth.onAuthStateChange(async (event, session) => {
-  // Ignora eventos que não sejam login/logout de verdade
+  // Só entra no painel em eventos reais de login ou sessão inicial
+  // TOKEN_REFRESHED e USER_UPDATED são disparados pela reautenticação (trocar senha, editar venda) — ignorar
+  if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "MFA_CHALLENGE_VERIFIED") return;
+
   if (session?.user) {
-    // Se já está no painel e só houve reautenticação (troca de senha, editar venda), ignora
-    if (_sessaoIniciada && event === "TOKEN_REFRESHED") return;
-    if (_sessaoIniciada && event === "SIGNED_IN") return;
-    _sessaoIniciada = true;
+    // Evita recarregar se já está logado no painel
+    if (usuarioAtual?.id === session.user.id) return;
     usuarioAtual = session.user;
     await carregarDadosUsuario();
     entrarNoPainel(session.user);
   } else {
-    _sessaoIniciada = false;
     usuarioAtual = null;
     produtos=[]; historico=[]; clientes=[]; carrinho={};
     lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta"};
