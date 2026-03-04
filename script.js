@@ -1,31 +1,14 @@
 /* ===================================================
-   HubVendasPro — script.js  (Firebase Edition)
+   HubVendasPro — script.js  (Supabase Edition)
    =================================================== */
 
-/* ─── Firebase Config ─── */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, onAuthStateChanged, updatePassword, EmailAuthProvider,
-  reauthenticateWithCredential
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {
-  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
-  collection, getDocs, addDoc, onSnapshot, writeBatch, query, orderBy
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+/* ─── Supabase Config ─── */
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAawPxL_xA-PPz5p8KYXw-5gY0VtlsvtKw",
-  authDomain: "hubvendaspro.firebaseapp.com",
-  projectId: "hubvendaspro",
-  storageBucket: "hubvendaspro.firebasestorage.app",
-  messagingSenderId: "375613987145",
-  appId: "1:375613987145:web:382b63dab37d51e8002298"
-};
+const SUPABASE_URL = "https://ykfvccrfylnlbooqdrvu.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrZnZjY3JmeWxubGJvb3FkcnZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NDU2MjIsImV4cCI6MjA4ODIyMTYyMn0.aGoGx4g4u4cDinsHcm4QGcp6aL_KXs8VUsKXuyKBGdE";
 
-const app       = initializeApp(firebaseConfig);
-const auth      = getAuth(app);
-const db        = getFirestore(app);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* ─── Estado global ─── */
 let produtos  = [];
@@ -33,7 +16,7 @@ let historico = [];
 let clientes  = [];
 
 let carrinho               = {};
-let usuarioAtual           = null;  // objeto Firebase User
+let usuarioAtual           = null;  // objeto Supabase User
 let editandoId             = null;
 let editandoClienteId      = null;
 let pagamentosSelecionados = ["dinheiro"];
@@ -60,13 +43,6 @@ const MENU_PADRAO = [
   { id: "relatorios",    icon: "📈", label: "Relatórios",   bnav: "Relatórios"},
   { id: "configuracoes", icon: "⚙️", label: "Configurações", bnav: "Config"   },
 ];
-
-/* ─── Helpers de path no Firestore ─── */
-// Todos os dados ficam em /users/{uid}/...
-const uidPath   = () => usuarioAtual.uid;
-const colRef    = (col) => collection(db, "users", uidPath(), col);
-const docRef    = (col, id) => doc(db, "users", uidPath(), col, id);
-const configRef = () => doc(db, "users", uidPath(), "config", "geral");
 
 /* ─── Toast ─── */
 function mostrarToast(msg, tipo="ok") {
@@ -136,31 +112,70 @@ function vendaNoIntervalo(v,{de,ate}) {
 }
 
 /* ─────────────────────────────────────────
-   FIRESTORE — CARREGAR DADOS DO USUÁRIO
+   SUPABASE — CARREGAR DADOS DO USUÁRIO
 ───────────────────────────────────────── */
 async function carregarDadosUsuario() {
   mostrarLoading("Sincronizando dados...");
   try {
+    const uid = usuarioAtual.id;
+
     // Carrega produtos
-    const prodSnap = await getDocs(colRef("produtos"));
-    produtos = prodSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+    const { data: prodData, error: prodErr } = await supabase
+      .from("produtos").select("*").eq("user_id", uid);
+    if (prodErr) throw prodErr;
+    produtos = (prodData || []).map(p => ({
+      firestoreId: p.id,   // mantemos o alias para não alterar o restante do código
+      id:          p.internal_id || 0,
+      skuId:       p.sku_id,
+      nome:        p.nome,
+      preco:       p.preco,
+      categoria:   p.categoria || "",
+      fotoKey:     p.foto_key || "",
+    }));
 
     // Carrega histórico
-    const histSnap = await getDocs(query(colRef("historico"), orderBy("id","asc")));
-    historico = histSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+    const { data: histData, error: histErr } = await supabase
+      .from("historico").select("*").eq("user_id", uid).order("created_at", { ascending: true });
+    if (histErr) throw histErr;
+    historico = (histData || []).map(h => ({
+      firestoreId:  h.id,
+      id:           h.internal_id,
+      data:         h.data,
+      hora:         h.hora,
+      itens:        h.itens || [],
+      subtotal:     h.subtotal,
+      desconto:     h.desconto,
+      total:        h.total,
+      pagamento:    h.pagamento,
+      pagamentos:   h.pagamentos || {},
+      clienteId:    h.cliente_id,
+      clienteNome:  h.cliente_nome || "",
+      cancelada:    h.cancelada || false,
+    }));
 
     // Carrega clientes
-    const cliSnap = await getDocs(colRef("clientes"));
-    clientes = cliSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+    const { data: cliData, error: cliErr } = await supabase
+      .from("clientes").select("*").eq("user_id", uid);
+    if (cliErr) throw cliErr;
+    clientes = (cliData || []).map(c => ({
+      firestoreId: c.id,
+      id:          c.internal_id,
+      nome:        c.nome || "",
+      telefone:    c.telefone || "",
+      cpf:         c.cpf || "",
+      email:       c.email || "",
+      endereco:    c.endereco || "",
+    }));
 
     // Carrega config
-    const cfgSnap = await getDoc(configRef());
-    if (cfgSnap.exists()) {
-      const cfg = cfgSnap.data();
-      lojaConfigAtual = cfg.lojaConfig || {nome:"",cor:"#00bf63",fonte:"jakarta"};
-      if (cfg.tema) document.documentElement.setAttribute("data-theme", cfg.tema);
-      if (cfg.menuOrdem) _menuOrdemLocal = cfg.menuOrdem;
+    const { data: cfgData } = await supabase
+      .from("config").select("*").eq("user_id", uid).single();
+    if (cfgData) {
+      lojaConfigAtual = cfgData.loja_config || {nome:"",cor:"#00bf63",fonte:"jakarta"};
+      if (cfgData.tema) document.documentElement.setAttribute("data-theme", cfgData.tema);
+      if (cfgData.menu_ordem) _menuOrdemLocal = cfgData.menu_ordem;
     }
+
   } catch(e) {
     console.error("Erro ao carregar dados:", e);
     mostrarToast("Erro ao carregar dados. Verifique a conexão.","erro");
@@ -170,70 +185,133 @@ async function carregarDadosUsuario() {
 }
 
 /* ─────────────────────────────────────────
-   FIRESTORE — SALVAR / ATUALIZAR / DELETAR
+   SUPABASE — SALVAR / ATUALIZAR / DELETAR
 ───────────────────────────────────────── */
 
 // Produtos
 async function fbSalvarProduto(produto) {
   try {
+    const uid = usuarioAtual.id;
+    const payload = {
+      user_id:     uid,
+      internal_id: produto.id,
+      sku_id:      produto.skuId,
+      nome:        produto.nome,
+      preco:       produto.preco,
+      categoria:   produto.categoria || "",
+      foto_key:    produto.fotoKey || "",
+    };
     if (produto.firestoreId) {
-      const { firestoreId, _fotoCache, ...data } = produto;
-      await setDoc(docRef("produtos", firestoreId), data);
+      const { error } = await supabase.from("produtos").update(payload).eq("id", produto.firestoreId);
+      if (error) throw error;
       return produto.firestoreId;
     } else {
-      const { _fotoCache, ...data } = produto;
-      const ref = await addDoc(colRef("produtos"), data);
-      return ref.id;
+      const { data, error } = await supabase.from("produtos").insert(payload).select().single();
+      if (error) throw error;
+      return data.id;
     }
-  } catch(e) { mostrarToast("Erro ao salvar produto.","erro"); return null; }
+  } catch(e) { mostrarToast("Erro ao salvar produto.","erro"); console.error(e); return null; }
 }
 async function fbDeletarProduto(firestoreId) {
-  try { await deleteDoc(docRef("produtos", firestoreId)); } catch(e) { mostrarToast("Erro ao deletar produto.","erro"); }
+  try {
+    const { error } = await supabase.from("produtos").delete().eq("id", firestoreId);
+    if (error) throw error;
+  } catch(e) { mostrarToast("Erro ao deletar produto.","erro"); }
 }
 
 // Histórico
 async function fbSalvarVenda(venda) {
   try {
+    const uid = usuarioAtual.id;
+    const payload = {
+      user_id:      uid,
+      internal_id:  venda.id,
+      data:         venda.data,
+      hora:         venda.hora,
+      itens:        venda.itens,
+      subtotal:     venda.subtotal,
+      desconto:     venda.desconto,
+      total:        venda.total,
+      pagamento:    venda.pagamento,
+      pagamentos:   venda.pagamentos || {},
+      cliente_id:   venda.clienteId || null,
+      cliente_nome: venda.clienteNome || "",
+      cancelada:    venda.cancelada || false,
+    };
     if (venda.firestoreId) {
-      const { firestoreId, ...data } = venda;
-      await setDoc(docRef("historico", firestoreId), data);
+      const { error } = await supabase.from("historico").update(payload).eq("id", venda.firestoreId);
+      if (error) throw error;
     } else {
-      const ref = await addDoc(colRef("historico"), venda);
-      return ref.id;
+      const { data, error } = await supabase.from("historico").insert(payload).select().single();
+      if (error) throw error;
+      return data.id;
     }
-  } catch(e) { mostrarToast("Erro ao salvar venda.","erro"); return null; }
+  } catch(e) { mostrarToast("Erro ao salvar venda.","erro"); console.error(e); return null; }
 }
 async function fbAtualizarVenda(firestoreId, dados) {
-  try { await updateDoc(docRef("historico", firestoreId), dados); } catch(e) { mostrarToast("Erro ao atualizar venda.","erro"); }
+  try {
+    // Mapeia campos do padrão antigo para os nomes das colunas do Supabase
+    const payload = {};
+    if (dados.cancelada  !== undefined) payload.cancelada    = dados.cancelada;
+    if (dados.itens      !== undefined) payload.itens        = dados.itens;
+    if (dados.subtotal   !== undefined) payload.subtotal     = dados.subtotal;
+    if (dados.desconto   !== undefined) payload.desconto     = dados.desconto;
+    if (dados.total      !== undefined) payload.total        = dados.total;
+    if (dados.pagamento  !== undefined) payload.pagamento    = dados.pagamento;
+    if (dados.pagamentos !== undefined) payload.pagamentos   = dados.pagamentos;
+    const { error } = await supabase.from("historico").update(payload).eq("id", firestoreId);
+    if (error) throw error;
+  } catch(e) { mostrarToast("Erro ao atualizar venda.","erro"); }
 }
 
 // Clientes
 async function fbSalvarCliente(cliente) {
   try {
+    const uid = usuarioAtual.id;
+    const payload = {
+      user_id:     uid,
+      internal_id: cliente.id,
+      nome:        cliente.nome || "",
+      telefone:    cliente.telefone || "",
+      cpf:         cliente.cpf || "",
+      email:       cliente.email || "",
+      endereco:    cliente.endereco || "",
+    };
     if (cliente.firestoreId) {
-      const { firestoreId, ...data } = cliente;
-      await setDoc(docRef("clientes", firestoreId), data);
+      const { error } = await supabase.from("clientes").update(payload).eq("id", cliente.firestoreId);
+      if (error) throw error;
       return cliente.firestoreId;
     } else {
-      const { firestoreId: _, ...data } = cliente;
-      const ref = await addDoc(colRef("clientes"), data);
-      return ref.id;
+      const { data, error } = await supabase.from("clientes").insert(payload).select().single();
+      if (error) throw error;
+      return data.id;
     }
-  } catch(e) { mostrarToast("Erro ao salvar cliente.","erro"); return null; }
+  } catch(e) { mostrarToast("Erro ao salvar cliente.","erro"); console.error(e); return null; }
 }
 async function fbDeletarCliente(firestoreId) {
-  try { await deleteDoc(docRef("clientes", firestoreId)); } catch(e) { mostrarToast("Erro ao deletar cliente.","erro"); }
+  try {
+    const { error } = await supabase.from("clientes").delete().eq("id", firestoreId);
+    if (error) throw error;
+  } catch(e) { mostrarToast("Erro ao deletar cliente.","erro"); }
 }
 
 // Config geral
 async function fbSalvarConfig(dados) {
-  try { await setDoc(configRef(), dados, { merge: true }); } catch(e) { console.error("Erro ao salvar config:", e); }
+  try {
+    const uid = usuarioAtual.id;
+    // Mapeia nomes do padrão antigo para colunas do Supabase
+    const payload = { user_id: uid, updated_at: new Date().toISOString() };
+    if (dados.tema       !== undefined) payload.tema        = dados.tema;
+    if (dados.lojaConfig !== undefined) payload.loja_config = dados.lojaConfig;
+    if (dados.menuOrdem  !== undefined) payload.menu_ordem  = dados.menuOrdem;
+    const { error } = await supabase.from("config").upsert(payload, { onConflict: "user_id" });
+    if (error) throw error;
+  } catch(e) { console.error("Erro ao salvar config:", e); }
 }
 
 /* ─────────────────────────────────────────
-   FIREBASE STORAGE — IMAGENS
-   Imagens ainda ficam no IndexedDB local para performance.
-   Avatar de perfil também vai pro Storage para sincronizar entre dispositivos.
+   IndexedDB — IMAGENS LOCAIS
+   Imagens ficam no IndexedDB local para performance.
 ───────────────────────────────────────── */
 const DB_NAME = "hvp_images"; let db_idb = null;
 function abrirDB() {
@@ -378,56 +456,56 @@ function navegarPara(pagina) {
 }
 
 /* ─────────────────────────────────────────
-   AUTH — FIREBASE
+   AUTH — SUPABASE
 ───────────────────────────────────────── */
 function toggleSenha(id,el) { const i=document.getElementById(id); if (i.type==="password"){i.type="text";el.textContent="🙈";}else{i.type="password";el.textContent="👁";} }
 
-function login() {
+async function login() {
   const email=document.getElementById("email").value.trim(), senha=document.getElementById("senha").value;
   if (!email||!senha){mostrarToast("Preencha email e senha.","erro");return;}
   if (!emailValido(email)){mostrarToast("Email inválido.","erro");return;}
   mostrarLoading("Entrando...");
-  signInWithEmailAndPassword(auth, email, senha)
-    .catch(err => {
-      esconderLoading();
-      if (err.code==="auth/invalid-credential"||err.code==="auth/wrong-password"||err.code==="auth/user-not-found") mostrarToast("Email ou senha inválidos.","erro");
-      else mostrarToast("Erro ao entrar. Tente novamente.","erro");
-    });
+  const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+  if (error) {
+    esconderLoading();
+    mostrarToast("Email ou senha inválidos.","erro");
+  }
+  // onAuthStateChange cuida do restante
 }
 
-function registrar() {
+async function registrar() {
   const email=document.getElementById("novoEmail").value.trim(), senha=document.getElementById("novaSenha").value, conf=document.getElementById("confirmarSenha").value;
   if (!email||!senha||!conf){mostrarToast("Preencha todos os campos.","erro");return;}
   if (!emailValido(email)){mostrarToast("Email inválido.","erro");return;}
   if (senha.length<6){mostrarToast("Mínimo 6 caracteres.","erro");return;}
   if (senha!==conf){mostrarToast("Senhas não coincidem.","erro");return;}
   mostrarLoading("Criando conta...");
-  createUserWithEmailAndPassword(auth, email, senha)
-    .then(() => {
-      mostrarToast("✅ Conta criada!");
-      document.getElementById("novoEmail").value=""; document.getElementById("novaSenha").value=""; document.getElementById("confirmarSenha").value="";
-      voltarLogin();
-    })
-    .catch(err => {
-      esconderLoading();
-      if (err.code==="auth/email-already-in-use") mostrarToast("Email já cadastrado.","erro");
-      else mostrarToast("Erro ao criar conta. Tente novamente.","erro");
-    });
+  const { error } = await supabase.auth.signUp({ email, password: senha });
+  if (error) {
+    esconderLoading();
+    if (error.message?.includes("already")) mostrarToast("Email já cadastrado.","erro");
+    else mostrarToast("Erro ao criar conta. Tente novamente.","erro");
+  } else {
+    esconderLoading();
+    mostrarToast("✅ Conta criada! Verifique seu e-mail para confirmar.");
+    document.getElementById("novoEmail").value=""; document.getElementById("novaSenha").value=""; document.getElementById("confirmarSenha").value="";
+    voltarLogin();
+  }
 }
 
-function logout() {
-  signOut(auth);
+async function logout() {
+  await supabase.auth.signOut();
 }
 
 function mostrarRegistro(){document.getElementById("login").classList.add("hidden");document.getElementById("registro").classList.remove("hidden");}
 function voltarLogin(){document.getElementById("registro").classList.add("hidden");document.getElementById("login").classList.remove("hidden");}
 
 // Observador do estado de autenticação — ponto central de controle
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    usuarioAtual = user;
+supabase.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    usuarioAtual = session.user;
     await carregarDadosUsuario();
-    entrarNoPainel(user);
+    entrarNoPainel(session.user);
   } else {
     usuarioAtual = null;
     produtos=[]; historico=[]; clientes=[]; carrinho={};
@@ -448,7 +526,7 @@ function entrarNoPainel(user) {
   carrinho={}; pagamentosSelecionados=["dinheiro"]; splitPagamento={}; tipoDesconto="pct"; categoriaAtiva="todas"; filtroHistorico="hoje"; filtroRelatorio="hoje";
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appShell").classList.remove("hidden");
-  carregarImagem(`avatar_${user.uid}`).then(av=>atualizarExibicaoAvatar(av, user.email[0].toUpperCase()));
+  carregarImagem(`avatar_${user.id}`).then(av=>atualizarExibicaoAvatar(av, user.email[0].toUpperCase()));
   document.getElementById("emailLogado").textContent=user.email;
   document.getElementById("total").innerText="0,00";
   aplicarNomeLoja();
@@ -765,7 +843,7 @@ async function salvarProduto() {
     document.getElementById("btnCancelarEdicao").style.display="none";
     mostrarToast("✅ Produto salvo!");
   }
-  if (fi.files[0]){const k=`foto_${usuarioAtual.uid}_${Date.now()}`,r=new FileReader();r.onload=async e=>{await salvarImagem(k,e.target.result);await salvar(k);};r.readAsDataURL(fi.files[0]);}
+  if (fi.files[0]){const k=`foto_${usuarioAtual.id}_${Date.now()}`,r=new FileReader();r.onload=async e=>{await salvarImagem(k,e.target.result);await salvar(k);};r.readAsDataURL(fi.files[0]);}
   else await salvar(null);
 }
 
@@ -947,14 +1025,17 @@ function fecharEditarVenda(){document.getElementById("modalEditarVenda").classLi
 
 async function confirmarSenhaAdmin() {
   const senha=document.getElementById("senhaAdminEditar").value;
-  const credential = EmailAuthProvider.credential(usuarioAtual.email, senha);
-  try {
-    await reauthenticateWithCredential(usuarioAtual, credential);
+  // Reautentica via Supabase
+  const { error } = await supabase.auth.signInWithPassword({
+    email: usuarioAtual.email,
+    password: senha,
+  });
+  if (error) {
+    mostrarToast("Senha incorreta.","erro");
+  } else {
     document.getElementById("editarVendaStep1").classList.add("hidden");
     document.getElementById("editarVendaStep2").classList.remove("hidden");
     _carregarFormEditarVenda();
-  } catch(e) {
-    mostrarToast("Senha incorreta.","erro");
   }
 }
 
@@ -970,7 +1051,7 @@ function _carregarFormEditarVenda() {
   document.getElementById("edit-desc-tipo-val")?.classList.add("ativo");
   ["dinheiro","cartao","pix"].forEach(t=>{const b=document.getElementById(`edit-pag-${t}`);if(b)b.classList.toggle("ativo",editarPagamentos.includes(t));});
   const sel=document.getElementById("editarProdutoSelect");
-  if (sel){sel.innerHTML=`<option value="">+ Adicionar produto ao pedido...</option>`+produtos.map(p=>`<option value="${p.id}">#${String(p.skuId).padStart(4,"0")} ${p.nome} – R$ ${fmt(p.preco)}</option>`).join("");sel.onchange=()=>{if(sel.value){_adicionarItemEditar(Number(sel.value));sel.value="";}};}
+  if (sel){sel.innerHTML=`<option value="">+ Adicionar produto ao pedido...</option>`+produtos.map(p=>`<option value="${p.id}">#${String(p.skuId).padStart(4,"0")} ${p.nome} – R$ ${fmt(p.preco)}</option>`).join("");sel.onchange=()=>{if(sel.value){_adicionarItemEditar(Number(sel.value));sel.value="";}};} 
   renderEditarItens(); renderEditSplit(); atualizarEditarTotal();
 }
 function _adicionarItemEditar(prodId) { const p=produtos.find(p=>p.id===prodId); if (!p) return; const ex=editarItens.find(i=>i.nome===p.nome); if (ex){ex.quantidade++;} else editarItens.push({nome:p.nome,skuId:p.skuId,quantidade:1,preco:p.preco}); renderEditarItens(); atualizarEditarTotal(); }
@@ -1111,7 +1192,6 @@ function copiarPedido(index) {
 
 /* ─────────────────────────────────────────
    EXPOR FUNÇÕES PARA O HTML (ES Module scope)
-   onclick= no HTML precisa dessas funções no window
 ───────────────────────────────────────── */
 Object.assign(window, {
   // Auth
@@ -1146,7 +1226,7 @@ Object.assign(window, {
 
 function renderConfiguracoes() {
   if (!usuarioAtual) return;
-  carregarImagem(`avatar_${usuarioAtual.uid}`).then(av=>{
+  carregarImagem(`avatar_${usuarioAtual.id}`).then(av=>{
     const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");
     if(pi&&pl){if(av){pi.src=av;pi.style.display="block";pl.style.display="none";}else{pi.style.display="none";pl.style.display="block";pl.textContent=usuarioAtual.email[0].toUpperCase();}}
   });
@@ -1161,11 +1241,11 @@ function renderConfiguracoes() {
 
 function atualizarFotoPerfil(input) {
   if (!input.files[0]) return;
-  const r=new FileReader();r.onload=async e=>{const b64=e.target.result;await salvarImagem(`avatar_${usuarioAtual.uid}`,b64);atualizarExibicaoAvatar(b64,usuarioAtual.email[0].toUpperCase());const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");if(pi&&pl){pi.src=b64;pi.style.display="block";pl.style.display="none";}};r.readAsDataURL(input.files[0]);
+  const r=new FileReader();r.onload=async e=>{const b64=e.target.result;await salvarImagem(`avatar_${usuarioAtual.id}`,b64);atualizarExibicaoAvatar(b64,usuarioAtual.email[0].toUpperCase());const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");if(pi&&pl){pi.src=b64;pi.style.display="block";pl.style.display="none";}};r.readAsDataURL(input.files[0]);
 }
 async function removerFotoPerfil(){
   const ok=await confirmar("Remover foto de perfil?");if(!ok)return;
-  await removerImagem(`avatar_${usuarioAtual.uid}`);
+  await removerImagem(`avatar_${usuarioAtual.id}`);
   const letra=usuarioAtual.email[0].toUpperCase(); atualizarExibicaoAvatar(null,letra);
   const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");
   if(pi&&pl){pi.style.display="none";pl.style.display="block";pl.textContent=letra;}
@@ -1187,14 +1267,14 @@ async function trocarSenha(){
   if(nv.length<6){mostrarToast("Mínimo 6 caracteres.","erro");return;}
   if(nv!==cf){mostrarToast("Senhas não coincidem.","erro");return;}
   if(nv===at){mostrarToast("A nova senha deve ser diferente.","erro");return;}
-  try {
-    const credential = EmailAuthProvider.credential(usuarioAtual.email, at);
-    await reauthenticateWithCredential(usuarioAtual, credential);
-    await updatePassword(usuarioAtual, nv);
-    ["senhaAtual","novaSenhaConfig","confirmarSenhaConfig"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
-    mostrarToast("✅ Senha atualizada!");
-  } catch(e) {
-    if(e.code==="auth/wrong-password"||e.code==="auth/invalid-credential") mostrarToast("Senha atual incorreta.","erro");
-    else mostrarToast("Erro ao atualizar senha.","erro");
-  }
+  // Reautentica antes de trocar a senha
+  const { error: reAuthErr } = await supabase.auth.signInWithPassword({
+    email: usuarioAtual.email,
+    password: at,
+  });
+  if (reAuthErr) { mostrarToast("Senha atual incorreta.","erro"); return; }
+  const { error } = await supabase.auth.updateUser({ password: nv });
+  if (error) { mostrarToast("Erro ao atualizar senha.","erro"); return; }
+  ["senhaAtual","novaSenhaConfig","confirmarSenhaConfig"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
+  mostrarToast("✅ Senha atualizada!");
 }
