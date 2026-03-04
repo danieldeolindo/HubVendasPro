@@ -124,9 +124,7 @@ async function carregarDadosUsuario() {
   try {
     const uid = usuarioAtual.id;
 
-    console.log("[HVP] Iniciando carregamento para uid:", uid);
-
-    // Carrega tudo em paralelo para ser mais rápido
+    // Carrega tudo em paralelo
     const [prodRes, histRes, cliRes, cfgRes] = await Promise.all([
       supabase.from("produtos").select("*").eq("user_id", uid),
       supabase.from("historico").select("*").eq("user_id", uid).order("created_at", { ascending: true }),
@@ -134,12 +132,6 @@ async function carregarDadosUsuario() {
       supabase.from("config").select("*").eq("user_id", uid).maybeSingle(),
     ]);
 
-    console.log("[HVP] produtos:", prodRes.error || `${(prodRes.data||[]).length} registros`);
-    console.log("[HVP] historico:", histRes.error || `${(histRes.data||[]).length} registros`);
-    console.log("[HVP] clientes:", cliRes.error || `${(cliRes.data||[]).length} registros`);
-    console.log("[HVP] config:", cfgRes.error || cfgRes.data);
-
-    // Se alguma query retornou erro, lança para o catch mostrar
     if (prodRes.error) throw new Error("produtos: " + prodRes.error.message);
     if (histRes.error) throw new Error("historico: " + histRes.error.message);
     if (cliRes.error) throw new Error("clientes: " + cliRes.error.message);
@@ -208,7 +200,7 @@ async function fbSalvarProduto(produto) {
     const payload = {
       user_id:     uid,
       internal_id: produto.id,
-      sku_id:      produto.skuId,
+      sku_id:      produto.sku_id || produto.skuId,
       nome:        produto.nome,
       preco:       produto.preco,
       categoria:   produto.categoria || "",
@@ -479,12 +471,16 @@ async function login() {
   if (!email||!senha){mostrarToast("Preencha email e senha.","erro");return;}
   if (!emailValido(email)){mostrarToast("Email inválido.","erro");return;}
   mostrarLoading("Entrando...");
-  const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
   if (error) {
     esconderLoading();
     mostrarToast("Email ou senha inválidos.","erro");
+    return;
   }
-  // onAuthStateChange cuida do restante
+  // Carrega dados manualmente (não depende do onAuthStateChange)
+  usuarioAtual = data.user;
+  await carregarDadosUsuario();
+  entrarNoPainel(data.user);
 }
 
 async function registrar() {
@@ -514,33 +510,50 @@ async function logout() {
 function mostrarRegistro(){document.getElementById("login").classList.add("hidden");document.getElementById("registro").classList.remove("hidden");}
 function voltarLogin(){document.getElementById("registro").classList.add("hidden");document.getElementById("login").classList.remove("hidden");}
 
-// Observador do estado de autenticação — ponto central de controle
-supabase.auth.onAuthStateChange(async (event, session) => {
-  // Ignora eventos que não representam login/logout real
-  if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "MFA_CHALLENGE_VERIFIED") return;
-  // Ignora SIGNED_IN disparado por reautenticação (trocar senha, confirmar edição de venda)
-  // Detectamos isso verificando se o painel já está visível
-  if (event === "SIGNED_IN" && !document.getElementById("appShell").classList.contains("hidden")) return;
+// ─── Função chamada ao fazer logout ou sessão expirada ───
+function limparSessao() {
+  usuarioAtual = null;
+  produtos=[]; historico=[]; clientes=[]; carrinho={};
+  lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta"};
+  _menuOrdemLocal=null;
+  document.documentElement.setAttribute("data-theme","light");
+  document.getElementById("appShell").classList.add("hidden");
+  document.getElementById("authScreen").classList.remove("hidden");
+  document.getElementById("email").value=""; document.getElementById("senha").value="";
+  const sb=document.getElementById("sidebarLojaBadge"),tb=document.getElementById("topbarLojaBadge");
+  if (sb) sb.style.display="none"; if (tb) tb.style.display="none";
+  document.getElementById("login").classList.remove("hidden");
+  document.getElementById("registro").classList.add("hidden");
+}
 
-  if (session?.user) {
-    usuarioAtual = session.user;
-    await carregarDadosUsuario();
-    entrarNoPainel(session.user);
-  } else {
-    usuarioAtual = null;
-    produtos=[]; historico=[]; clientes=[]; carrinho={};
-    lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta"};
-    _menuOrdemLocal=null;
-    document.documentElement.setAttribute("data-theme","light");
-    document.getElementById("appShell").classList.add("hidden");
-    document.getElementById("authScreen").classList.remove("hidden");
-    document.getElementById("email").value=""; document.getElementById("senha").value="";
-    const sb=document.getElementById("sidebarLojaBadge"),tb=document.getElementById("topbarLojaBadge");
-    if (sb) sb.style.display="none"; if (tb) tb.style.display="none";
-    document.getElementById("login").classList.remove("hidden");
-    document.getElementById("registro").classList.add("hidden");
-  }
+// ─── Observador apenas para SIGNED_OUT ───
+// Login e sessão inicial são tratados por iniciarApp() abaixo
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === "SIGNED_OUT") limparSessao();
 });
+
+// ─── Inicialização: verifica sessão existente uma única vez ───
+async function iniciarApp() {
+  mostrarLoading("Carregando...");
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      usuarioAtual = session.user;
+      await carregarDadosUsuario();
+      entrarNoPainel(session.user);
+    } else {
+      limparSessao();
+    }
+  } catch(e) {
+    console.error("[HVP] Erro na inicialização:", e);
+    limparSessao();
+  } finally {
+    esconderLoading();
+  }
+}
+
+// Inicia quando o DOM estiver pronto
+document.addEventListener("DOMContentLoaded", iniciarApp);
 
 function entrarNoPainel(user) {
   carrinho={}; pagamentosSelecionados=["dinheiro"]; splitPagamento={}; tipoDesconto="pct"; categoriaAtiva="todas"; filtroHistorico="hoje"; filtroRelatorio="hoje";
