@@ -195,28 +195,26 @@ async function carregarDadosUsuario() {
 
 // Produtos
 async function fbSalvarProduto(produto) {
-  try {
-    const uid = usuarioAtual.id;
-    const payload = {
-      user_id:     uid,
-      internal_id: produto.id,
-      sku_id:      produto.sku_id || produto.skuId,
-      nome:        produto.nome,
-      preco:       produto.preco,
-      categoria:   produto.categoria || "",
-      foto_key:    produto.fotoKey || "",
-      foto_url:    produto.fotoUrl || "",
-    };
-    if (produto.firestoreId) {
-      const { error } = await supabase.from("produtos").update(payload).eq("id", produto.firestoreId);
-      if (error) throw error;
-      return produto.firestoreId;
-    } else {
-      const { data, error } = await supabase.from("produtos").insert(payload).select().single();
-      if (error) throw error;
-      return data.id;
-    }
-  } catch(e) { mostrarToast("Erro ao salvar produto.","erro"); console.error(e); return null; }
+  const uid = usuarioAtual.id;
+  const payload = {
+    user_id:     uid,
+    internal_id: produto.id,
+    sku_id:      produto.skuId,
+    nome:        produto.nome,
+    preco:       produto.preco,
+    categoria:   produto.categoria || "",
+    foto_key:    produto.fotoKey || "",
+    foto_url:    produto.fotoUrl || "",
+  };
+  if (produto.firestoreId) {
+    const { error } = await supabase.from("produtos").update(payload).eq("id", produto.firestoreId);
+    if (error) throw new Error("Erro ao atualizar produto: " + error.message);
+    return produto.firestoreId;
+  } else {
+    const { data, error } = await supabase.from("produtos").insert(payload).select().single();
+    if (error) throw new Error("Erro ao inserir produto: " + error.message);
+    return data.id;
+  }
 }
 async function fbDeletarProduto(firestoreId) {
   try {
