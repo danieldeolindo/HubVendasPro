@@ -176,6 +176,7 @@ async function carregarDadosUsuario() {
     const cfgData = cfgRes.data;
     if (cfgData) {
       lojaConfigAtual = cfgData.loja_config || {nome:"",cor:"#00bf63",fonte:"jakarta"};
+      lojaConfigAtual._avatarUrl = cfgData.avatar_url || "";
       if (cfgData.tema) document.documentElement.setAttribute("data-theme", cfgData.tema);
       if (cfgData.menu_ordem) _menuOrdemLocal = cfgData.menu_ordem;
     }
@@ -308,6 +309,7 @@ async function fbSalvarConfig(dados) {
     if (dados.tema       !== undefined) payload.tema        = dados.tema;
     if (dados.lojaConfig !== undefined) payload.loja_config = dados.lojaConfig;
     if (dados.menuOrdem  !== undefined) payload.menu_ordem  = dados.menuOrdem;
+    if (dados.avatar_url !== undefined) payload.avatar_url  = dados.avatar_url;
     const { error } = await supabase.from("config").upsert(payload, { onConflict: "user_id" });
     if (error) throw error;
   } catch(e) { console.error("Erro ao salvar config:", e); }
@@ -557,7 +559,8 @@ function entrarNoPainel(user) {
   carrinho={}; pagamentosSelecionados=["dinheiro"]; splitPagamento={}; tipoDesconto="pct"; categoriaAtiva="todas"; filtroHistorico="hoje"; filtroRelatorio="hoje";
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appShell").classList.remove("hidden");
-  carregarImagem(`avatar_${user.id}`).then(av=>atualizarExibicaoAvatar(av, user.email[0].toUpperCase()));
+  const av = lojaConfigAtual._avatarUrl || null;
+  atualizarExibicaoAvatar(av, user.email[0].toUpperCase());
   document.getElementById("emailLogado").textContent=user.email;
   document.getElementById("total").innerText="0,00";
   aplicarNomeLoja();
@@ -1278,10 +1281,9 @@ Object.assign(window, {
 
 function renderConfiguracoes() {
   if (!usuarioAtual) return;
-  carregarImagem(`avatar_${usuarioAtual.id}`).then(av=>{
-    const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");
-    if(pi&&pl){if(av){pi.src=av;pi.style.display="block";pl.style.display="none";}else{pi.style.display="none";pl.style.display="block";pl.textContent=usuarioAtual.email[0].toUpperCase();}}
-  });
+  const avatarUrl = lojaConfigAtual._avatarUrl || "";
+  const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");
+  if(pi&&pl){if(avatarUrl){pi.src=avatarUrl;pi.style.display="block";pl.style.display="none";}else{pi.style.display="none";pl.style.display="block";pl.textContent=usuarioAtual.email[0].toUpperCase();}}
   const ie=document.getElementById("identityEmail"); if(ie)ie.textContent=usuarioAtual.email;
   const tema=document.documentElement.getAttribute("data-theme")||"light";
   document.getElementById("tema-claro")?.classList.toggle("ativo",tema==="light");
@@ -1291,14 +1293,35 @@ function renderConfiguracoes() {
   renderLojaConfigUI();renderMenuOrderList();
 }
 
-function atualizarFotoPerfil(input) {
+async function atualizarFotoPerfil(input) {
   if (!input.files[0]) return;
-  const r=new FileReader();r.onload=async e=>{const b64=e.target.result;await salvarImagem(`avatar_${usuarioAtual.id}`,b64);atualizarExibicaoAvatar(b64,usuarioAtual.email[0].toUpperCase());const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");if(pi&&pl){pi.src=b64;pi.style.display="block";pl.style.display="none";}};r.readAsDataURL(input.files[0]);
+  mostrarLoading("Salvando foto...");
+  try {
+    const ext = input.files[0].name.split(".").pop();
+    const path = `avatars/${usuarioAtual.id}.${ext}`;
+    const { error } = await supabase.storage.from("fotos").upload(path, input.files[0], { upsert: true });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage.from("fotos").getPublicUrl(path);
+    const url = urlData.publicUrl + "?t=" + Date.now(); // evita cache
+    await fbSalvarConfig({ avatar_url: url });
+    atualizarExibicaoAvatar(url, usuarioAtual.email[0].toUpperCase());
+    const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");
+    if(pi&&pl){pi.src=url;pi.style.display="block";pl.style.display="none";}
+    mostrarToast("✅ Foto atualizada!");
+  } catch(e) {
+    console.error(e);
+    mostrarToast("Erro ao salvar foto.","erro");
+  } finally {
+    esconderLoading();
+  }
 }
 async function removerFotoPerfil(){
   const ok=await confirmar("Remover foto de perfil?");if(!ok)return;
-  await removerImagem(`avatar_${usuarioAtual.id}`);
-  const letra=usuarioAtual.email[0].toUpperCase(); atualizarExibicaoAvatar(null,letra);
+  // Remove do Storage (tenta jpg e png)
+  await supabase.storage.from("fotos").remove([`avatars/${usuarioAtual.id}.jpg`, `avatars/${usuarioAtual.id}.png`, `avatars/${usuarioAtual.id}.jpeg`, `avatars/${usuarioAtual.id}.webp`]);
+  await fbSalvarConfig({ avatar_url: "" });
+  const letra=usuarioAtual.email[0].toUpperCase();
+  atualizarExibicaoAvatar(null, letra);
   const pi=document.getElementById("avatarPreviewImg"),pl=document.getElementById("avatarPreviewLetra");
   if(pi&&pl){pi.style.display="none";pl.style.display="block";pl.textContent=letra;}
   document.getElementById("fotoPerfilInput").value=""; mostrarToast("Foto removida.");
