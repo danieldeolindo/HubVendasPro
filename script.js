@@ -5,8 +5,10 @@
 /* ─── Supabase Config ─── */
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
-const SUPABASE_URL = "https://ykfvccrfylnlbooqdrvu.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrZnZjY3JmeWxubGJvb3FkcnZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NDU2MjIsImV4cCI6MjA4ODIyMTYyMn0.aGoGx4g4u4cDinsHcm4QGcp6aL_KXs8VUsKXuyKBGdE";
+// Configure estes valores no seu projeto Supabase.
+// Nunca publique a URL real ou a chave anon do projeto em repositórios públicos.
+const SUPABASE_URL = "https://SEU_PROJETO.supabase.co";
+const SUPABASE_KEY = "SUA_ANON_KEY_AQUI";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
