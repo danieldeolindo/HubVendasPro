@@ -8,6 +8,8 @@
 
 -- Adiciona coluna foto_url na tabela produtos (se não existir)
 ALTER TABLE produtos ADD COLUMN IF NOT EXISTS foto_url TEXT DEFAULT '';
+ALTER TABLE produtos ADD COLUMN IF NOT EXISTS custo NUMERIC DEFAULT 0;
+ALTER TABLE produtos ADD COLUMN IF NOT EXISTS estoque INTEGER DEFAULT 0;
 
 -- =====================================================
 --  SCHEMA COMPLETO (do zero) — pode usar no lugar do
