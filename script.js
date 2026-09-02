@@ -202,7 +202,6 @@ async function carregarDadosUsuario() {
       pagamentos:   h.pagamentos || {},
       clienteId:    h.cliente_id,
       clienteNome:  h.cliente_nome || "",
-      clienteEndereco: h.cliente_endereco || "",
       cancelada:    h.cancelada || false,
     }));
     pedidosRT = (rtRes.data || []).map(normalizarPedidoRT);
@@ -288,7 +287,6 @@ async function fbSalvarVenda(venda) {
       pagamentos:   venda.pagamentos || {},
       cliente_id:   venda.clienteId || null,
       cliente_nome: venda.clienteNome || "",
-      cliente_endereco: venda.clienteEndereco || "",
       cancelada:    venda.cancelada || false,
     };
     if (venda.firestoreId) {
@@ -759,24 +757,6 @@ function abrirFormularioCliente() {
   document.getElementById("clienteFormCard")?.classList.remove("hidden");
   document.getElementById("btnCancelarCliente").style.display="inline-flex";
 }
-function abrirModalNovoCliente() {
-  ["novoClienteModalNome", "novoClienteModalTelefone", "novoClienteModalEndereco"].forEach(id => { const el=document.getElementById(id); if (el) el.value=""; });
-  document.getElementById("modalNovoCliente")?.classList.remove("hidden");
-  document.getElementById("novoClienteModalNome")?.focus();
-}
-function fecharModalNovoCliente() { document.getElementById("modalNovoCliente")?.classList.add("hidden"); }
-async function salvarClienteModal() {
-  const nome=document.getElementById("novoClienteModalNome").value.trim();
-  const telefone=document.getElementById("novoClienteModalTelefone").value.trim();
-  const endereco=document.getElementById("novoClienteModalEndereco").value.trim();
-  if (!nome && !telefone && !endereco) { mostrarToast("Preencha ao menos um campo.", "erro"); return; }
-  const cliente={id:proximoIdCliente(),nome,telefone,endereco,cpf:"",email:""};
-  const fid=await fbSalvarCliente(cliente);
-  if (!fid) return;
-  cliente.firestoreId=fid; clientes.push(cliente); popularSelectClientes();
-  document.getElementById("clienteSelecionado").value=String(cliente.id);
-  fecharModalNovoCliente(); mostrarToast("✅ Cliente cadastrado!");
-}
 function abrirNovoCliente() {
   editandoClienteId=null;
   limparCamposCliente();
@@ -1110,7 +1090,7 @@ async function finalizarPedido() {
   const clienteIdVal=document.getElementById("clienteSelecionado")?.value||"";
   const clienteObj=clienteIdVal?clientes.find(c=>c.id===Number(clienteIdVal)):null;
   const clienteNome=clienteObj?.nome||"";
-  const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteObj?.firestoreId||null,clienteNome,clienteEndereco:clienteObj?.endereco||""};
+  const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteObj?.firestoreId||null,clienteNome};
   const fid = await fbSalvarVenda(venda);
   if (fid) { venda.firestoreId=fid; historico.push(venda); }
   await Promise.all(itensIds.map(async id=>{const p=produtos.find(prod=>prod.id===Number(id));p.estoque=Math.max(0,(p.estoque||0)-carrinho[id]);await fbSalvarProduto(p);}));
@@ -1145,7 +1125,6 @@ function montarHTMLComprovante(venda) {
   }).join("");
   let clienteLinha="";
   if (venda.clienteNome) clienteLinha+=`<p class="cv-cliente">Cliente: <strong>${venda.clienteNome}</strong></p>`;
-  if (venda.clienteEndereco) clienteLinha+=`<p class="cv-cliente">Endereço: <strong>${venda.clienteEndereco}</strong></p>`;
   if (venda.clienteId) { const cli=clientes.find(c=>c.id===venda.clienteId); if (cli?.cpf) clienteLinha+=`<p class="cv-cliente">CPF: <strong>${cli.cpf}</strong></p>`; }
   return `<div class="cupom" style="background:#fff;color:#000;">
     <div class="cupom-header">
@@ -1186,7 +1165,6 @@ function baixarComprovantePDF() {
   doc.setFont("Courier","normal");doc.setFontSize(9);doc.text("Comprovante de Venda",40,y,{align:"center"});y+=4;
   doc.text(`${v.data} às ${v.hora||""}`,40,y,{align:"center"});y+=4;
   if (v.clienteNome){doc.text(`Cliente: ${v.clienteNome}`,40,y,{align:"center"});y+=4;}
-  if (v.clienteEndereco){doc.text(`Endereco: ${v.clienteEndereco}`,40,y,{align:"center"});y+=4;}
   if (v.clienteId){const cli=clientes.find(c=>c.id===v.clienteId);if(cli?.cpf){doc.text(`CPF: ${cli.cpf}`,40,y,{align:"center"});y+=4;}}
   doc.text("- ".repeat(22),4,y);y+=5;
   doc.setFont("Courier","bold");doc.setFontSize(9);doc.text("Produto",4,y);doc.text("Qtd",52,y,{align:"center"});doc.text("Valor",76,y,{align:"right"});y+=4;
@@ -1220,7 +1198,6 @@ function normalizarPedidoRT(p) {
     pagamentos: p.pagamentos || {},
     pagamento: p.pagamento || "dinheiro",
     clienteNome: p.cliente_nome || "",
-    clienteEndereco: p.cliente_endereco || p.endereco || "",
     origem: "art",
     cancelada: p.status === "cancelado",
   };
@@ -1760,16 +1737,10 @@ function renderPedidoRTCard(p) {
       <span class="pedido-rt-tel">📞 ${p.cliente_telefone||"—"}</span>
     </div>
     <div class="pedido-rt-acoes">
-      <button class="btn-copiar btn-sm" onclick="abrirComprovanteRT('${p.id}')">🖨 Comprovante</button>
       ${p.cliente_telefone?`<button class="btn-ghost btn-sm" onclick="window.open('https://wa.me/${p.cliente_telefone.replace(/\\D/g,"")}','_blank')">💬 Chamar no WhatsApp</button>`:""}
       ${cancelado?`<span class="pedido-status-text cancelado">Pedido cancelado</span>`:concluido?`<span class="pedido-status-text concluido">✓ Pedido concluído</span>`:`<button class="btn-primary btn-sm" onclick="marcarPedidoRTAtendido('${p.id}')">✓ Marcar como concluído</button><button class="btn-invalidar btn-sm" onclick="cancelarPedidoRT('${p.id}')">Cancelar pedido</button>`}
     </div>
   </div>`;
-}
-
-function abrirComprovanteRT(id) {
-  const pedido=pedidosRT.find(p=>String(p.id)===String(id));
-  if (pedido) mostrarComprovante(normalizarPedidoRT(pedido));
 }
 
 async function marcarPedidoRTAtendido(id) {
@@ -2044,10 +2015,9 @@ function onSplitInputCatalogo(tipo) {
 async function finalizarPedidoCatalogo() {
   const nome = document.getElementById("catalogoClienteNome").value.trim();
   const telefone = document.getElementById("catalogoClienteTelefone").value.trim();
-  const endereco = document.getElementById("catalogoClienteEndereco").value.trim();
   const itens = Object.values(carrinhoCatalogo);
   if (!itens.length) { mostrarToast("Adicione ao menos um produto.","erro"); return; }
-  if (!nome || !telefone || !endereco) { mostrarToast("Preencha nome, telefone e endereço.","erro"); return; }
+  if (!nome || !telefone) { mostrarToast("Preencha nome e telefone.","erro"); return; }
   const total = totalCatalogo();
   const pagamentosFinal = getSplitFinal(pagamentosCatalogo, splitCatalogo, total);
   mostrarLoading("Enviando pedido...");
@@ -2055,7 +2025,6 @@ async function finalizarPedidoCatalogo() {
     p_loja_user_id: LOJA_CATALOGO_ID,
     p_cliente_nome: nome,
     p_cliente_telefone: telefone,
-    p_cliente_endereco: endereco,
     p_itens: itens.map(i=>({nome:i.nome,quantidade:i.quantidade,preco:i.preco})),
     p_total: total,
     p_pagamento: pagamentosCatalogo.join("+"),
@@ -2070,7 +2039,7 @@ async function finalizarPedidoCatalogo() {
   const itensTxt = itens.map(i=>`- ${i.quantidade}x ${i.nome} (R$ ${fmt(i.preco*i.quantidade)})`).join("\n");
   const pagsTxt = Object.entries(pagamentosFinal).filter(([,v])=>v>0).map(([t,v])=>pagamentosCatalogo.length>1?`${ICONE_PAGAMENTO[t]}: R$ ${fmt(v)}`:ICONE_PAGAMENTO[t]).join(" + ");
   const cupomTxt = cupomCatalogoAplicado ? `\nCupom: ${cupomCatalogo.codigo} (${cupomCatalogo.percentual}% de desconto)` : "";
-  const msg = `Olá! Gostaria de fazer o seguinte pedido:\n\n${itensTxt}${cupomTxt}\n\n*Total: R$ ${fmt(total)}*\nForma de pagamento: ${pagsTxt}\n\nNome: ${nome}\nEndereço: ${endereco}`;
+  const msg = `Olá! Gostaria de fazer o seguinte pedido:\n\n${itensTxt}${cupomTxt}\n\n*Total: R$ ${fmt(total)}*\nForma de pagamento: ${pagsTxt}\n\nNome: ${nome}`;
   if (whatsappLojaPublico) window.location.href = `https://wa.me/${whatsappLojaPublico}?text=${encodeURIComponent(msg)}`;
   else mostrarToast("✅ Pedido enviado! A loja não configurou um WhatsApp.");
 }
@@ -2084,7 +2053,7 @@ Object.assign(window, {
   // Navegação
   navegarPara,
   // Vendas
-  togglePagamento, onSplitInput, setTipoDesconto, finalizarPedido, abrirModalNovoCliente, fecharModalNovoCliente, salvarClienteModal, abrirComprovanteRT,
+  togglePagamento, onSplitInput, setTipoDesconto, finalizarPedido,
   limparCarrinho, removerDoCarrinho, alterarQtd, definirQtd,
   selecionarCategoria, renderProdutos, atualizarTotal,
   // Produtos

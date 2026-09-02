@@ -210,7 +210,7 @@
               <select id="clienteSelecionado" style="flex:1;min-width:180px;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;color:var(--text);background:var(--input-bg);outline:none">
                 <option value="">— Venda sem cliente —</option>
               </select>
-              <button class="btn-ghost" onclick="abrirModalNovoCliente()" style="white-space:nowrap">+ Novo cliente</button>
+              <button class="btn-ghost" onclick="navegarPara('clientes'); abrirFormularioCliente()" style="white-space:nowrap">+ Novo cliente</button>
             </div>
           </div>
 
@@ -303,26 +303,6 @@
       </div>
       <div id="listaClientes"></div>
     </section>
-
-    <!-- MODAL NOVO CLIENTE NA VENDA -->
-    <div id="modalNovoCliente" class="modal-overlay hidden" onclick="if(event.target===this)fecharModalNovoCliente()">
-      <div class="modal-box cliente-modal">
-        <div class="modal-header">
-          <h3 class="modal-title">+ Novo cliente</h3>
-          <button class="modal-close" onclick="fecharModalNovoCliente()">✕</button>
-        </div>
-        <div class="form-row">
-          <div class="field-group flex1"><label>Nome</label><input type="text" id="novoClienteModalNome" placeholder="Nome completo"></div>
-          <div class="field-group w160"><label>Telefone / WhatsApp</label><input type="text" id="novoClienteModalTelefone" placeholder="(00) 00000-0000" oninput="this.value=formatarTelefone(this.value)" maxlength="15"></div>
-        </div>
-        <div class="field-group"><label>Endereço</label><input type="text" id="novoClienteModalEndereco" placeholder="Rua, número, bairro, cidade"></div>
-        <p style="font-size:12px;color:var(--text3);margin:12px 0">O cliente será salvo e ficará disponível também na aba Clientes.</p>
-        <div class="form-actions">
-          <button class="btn-primary" onclick="salvarClienteModal()">Salvar cliente</button>
-          <button class="btn-ghost" onclick="fecharModalNovoCliente()">Cancelar</button>
-        </div>
-      </div>
-    </div>
 
     <!-- HISTÓRICO -->
     <section id="page-historico" class="page">
@@ -585,7 +565,6 @@
         <div class="field-group flex1"><label>Seu nome</label><input type="text" id="catalogoClienteNome" placeholder="Nome completo"></div>
         <div class="field-group w160"><label>WhatsApp</label><input type="text" id="catalogoClienteTelefone" placeholder="(00) 00000-0000" oninput="this.value=formatarTelefone(this.value)" maxlength="15"></div>
       </div>
-      <div class="field-group" style="margin-top:12px"><label>Endereço</label><input type="text" id="catalogoClienteEndereco" placeholder="Rua, número, bairro, cidade"></div>
       <button class="btn-primary full" onclick="finalizarPedidoCatalogo()">✓ Enviar pedido pelo WhatsApp</button>
     </div>
   </main>

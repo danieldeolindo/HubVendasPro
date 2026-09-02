@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS pedidos_rt (
   loja_user_id      UUID    REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   cliente_nome      TEXT    DEFAULT '',
   cliente_telefone  TEXT    DEFAULT '',
-  cliente_endereco  TEXT    DEFAULT '',
   itens             JSONB   DEFAULT '[]',
   total             NUMERIC DEFAULT 0,
   pagamento         TEXT    DEFAULT 'dinheiro',
@@ -57,7 +56,6 @@ CREATE OR REPLACE FUNCTION public.criar_pedido_rt(
   p_loja_user_id UUID,
   p_cliente_nome TEXT,
   p_cliente_telefone TEXT,
-  p_cliente_endereco TEXT,
   p_itens JSONB,
   p_total NUMERIC,
   p_pagamento TEXT DEFAULT 'dinheiro',
@@ -78,13 +76,12 @@ BEGIN
   END IF;
 
   INSERT INTO pedidos_rt (
-    loja_user_id, cliente_nome, cliente_telefone, cliente_endereco, itens, total,
+    loja_user_id, cliente_nome, cliente_telefone, itens, total,
     pagamento, pagamentos, status
   ) VALUES (
     p_loja_user_id,
     COALESCE(NULLIF(trim(p_cliente_nome), ''), 'Cliente'),
     COALESCE(p_cliente_telefone, ''),
-    COALESCE(p_cliente_endereco, ''),
     COALESCE(p_itens, '[]'::jsonb),
     COALESCE(p_total, 0),
     COALESCE(NULLIF(p_pagamento, ''), 'dinheiro'),
@@ -106,16 +103,12 @@ BEGIN
     LIMIT 1;
 
     IF cliente_existente IS NULL THEN
-      INSERT INTO clientes (user_id, nome, telefone, endereco)
+      INSERT INTO clientes (user_id, nome, telefone)
       VALUES (
         p_loja_user_id,
         COALESCE(NULLIF(trim(p_cliente_nome), ''), 'Cliente'),
-        COALESCE(p_cliente_telefone, ''),
-        COALESCE(p_cliente_endereco, '')
+        COALESCE(p_cliente_telefone, '')
       );
-    ELSE
-      UPDATE clientes SET nome = COALESCE(NULLIF(trim(p_cliente_nome), ''), nome), endereco = COALESCE(NULLIF(trim(p_cliente_endereco), ''), endereco)
-      WHERE id = cliente_existente;
     END IF;
   END IF;
 
@@ -123,9 +116,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) TO anon;
-GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) TO authenticated;
+REVOKE ALL ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) TO anon;
+GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) TO authenticated;
 
 -- ─── 3) Habilitar Realtime nessa tabela ──────────────
 -- Isso NÃO dá pra fazer só com SQL puro em todos os projetos Supabase;

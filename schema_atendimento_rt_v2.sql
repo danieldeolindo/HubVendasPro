@@ -10,14 +10,12 @@
 
 -- Pedido pode ter mais de uma forma de pagamento (igual à aba Vendas)
 ALTER TABLE pedidos_rt ADD COLUMN IF NOT EXISTS pagamentos JSONB DEFAULT '{}';
-ALTER TABLE pedidos_rt ADD COLUMN IF NOT EXISTS cliente_endereco TEXT DEFAULT '';
 ALTER TABLE config ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT '';
 
 CREATE OR REPLACE FUNCTION public.criar_pedido_rt(
   p_loja_user_id UUID,
   p_cliente_nome TEXT,
   p_cliente_telefone TEXT,
-  p_cliente_endereco TEXT,
   p_itens JSONB,
   p_total NUMERIC,
   p_pagamento TEXT DEFAULT 'dinheiro',
@@ -50,29 +48,25 @@ BEGIN
     LIMIT 1;
 
     IF cliente_existente IS NULL THEN
-      INSERT INTO clientes (user_id, nome, telefone, endereco)
+      INSERT INTO clientes (user_id, nome, telefone)
       VALUES (
         p_loja_user_id,
         COALESCE(NULLIF(trim(p_cliente_nome), ''), 'Cliente'),
-        COALESCE(p_cliente_telefone, ''),
-        COALESCE(p_cliente_endereco, '')
+        COALESCE(p_cliente_telefone, '')
       );
-    ELSE
-      UPDATE clientes SET nome = COALESCE(NULLIF(trim(p_cliente_nome), ''), nome), endereco = COALESCE(NULLIF(trim(p_cliente_endereco), ''), endereco)
-      WHERE id = cliente_existente;
     END IF;
   END IF;
 
-  INSERT INTO pedidos_rt (loja_user_id, cliente_nome, cliente_telefone, cliente_endereco, itens, total, pagamento, pagamentos, status)
-  VALUES (p_loja_user_id, COALESCE(NULLIF(trim(p_cliente_nome), ''), 'Cliente'), COALESCE(p_cliente_telefone, ''), COALESCE(p_cliente_endereco, ''), COALESCE(p_itens, '[]'::jsonb), COALESCE(p_total, 0), COALESCE(NULLIF(p_pagamento, ''), 'dinheiro'), COALESCE(p_pagamentos, '{}'::jsonb), 'novo')
+  INSERT INTO pedidos_rt (loja_user_id, cliente_nome, cliente_telefone, itens, total, pagamento, pagamentos, status)
+  VALUES (p_loja_user_id, COALESCE(NULLIF(trim(p_cliente_nome), ''), 'Cliente'), COALESCE(p_cliente_telefone, ''), COALESCE(p_itens, '[]'::jsonb), COALESCE(p_total, 0), COALESCE(NULLIF(p_pagamento, ''), 'dinheiro'), COALESCE(p_pagamentos, '{}'::jsonb), 'novo')
   RETURNING id INTO novo_id;
   RETURN novo_id;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) TO anon;
-GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) TO authenticated;
+REVOKE ALL ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) TO anon;
+GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB) TO authenticated;
 
 GRANT INSERT ON pedidos_rt TO anon;
 GRANT INSERT, SELECT, UPDATE, DELETE ON pedidos_rt TO authenticated;
