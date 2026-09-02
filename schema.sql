@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS produtos (
   sku_id        INT,
   nome          TEXT    NOT NULL,
   preco         NUMERIC NOT NULL,
+  custo         NUMERIC DEFAULT 0,
+  estoque       INTEGER DEFAULT 0,
   categoria     TEXT    DEFAULT '',
   foto_key      TEXT    DEFAULT '',  -- chave do IndexedDB (mantida para compatibilidade)
   created_at    TIMESTAMPTZ DEFAULT NOW()

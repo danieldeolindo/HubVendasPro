@@ -85,6 +85,15 @@
   </header>
 
   <nav class="bottom-nav" id="bottomNav"></nav>
+  <div id="mobileMoreMenu" class="mobile-more-menu" aria-hidden="true">
+    <div class="mobile-more-menu-header">
+      <span>Mais opções</span>
+      <button type="button" class="mobile-more-close" id="mobileMoreClose" aria-label="Fechar menu">✕</button>
+    </div>
+    <button type="button" class="mobile-more-option" data-mobile-page="historico"><span>📋</span><span>Histórico</span></button>
+    <button type="button" class="mobile-more-option" data-mobile-page="clientes"><span>👥</span><span>Clientes</span></button>
+    <button type="button" class="mobile-more-option" data-mobile-page="configuracoes"><span>⚙️</span><span>Configurações</span></button>
+  </div>
 
   <main class="main-content">
 
@@ -93,12 +102,43 @@
       <div class="page-header">
         <div><h1 class="page-title">Dashboard</h1><p class="page-sub" id="dashData">Resumo do seu negócio</p></div>
       </div>
+      <div class="section-card historico-filtros-card">
+        <p class="section-label">Filtrar por período</p>
+        <div class="historico-filtros">
+          <button class="btn-filtro-periodo ativo" onclick="setFiltroDashboard('hoje')" id="dash-filtro-hoje">Hoje</button>
+          <button class="btn-filtro-periodo" onclick="setFiltroDashboard('semana')" id="dash-filtro-semana">7 dias</button>
+          <button class="btn-filtro-periodo" onclick="setFiltroDashboard('mes')" id="dash-filtro-mes">30 dias</button>
+          <button class="btn-filtro-periodo" onclick="setFiltroDashboard('tudo')" id="dash-filtro-tudo">Tudo</button>
+          <div class="filtro-custom">
+            <input type="date" id="dashFiltroDataInicio" onchange="setFiltroDashboard('custom')">
+            <span>até</span>
+            <input type="date" id="dashFiltroDataFim" onchange="setFiltroDashboard('custom')">
+          </div>
+        </div>
+      </div>
       <div class="kpi-grid" id="kpiGrid"></div>
+      <div class="section-card baixo-estoque-card" onclick="navegarPara('estoque')">
+        <div class="baixo-estoque-header"><p class="section-label">Estoque</p><span class="baixo-estoque-link">Ver detalhes →</span></div>
+        <div id="baixoEstoqueResumo"></div>
+      </div>
       <div class="dash-grid">
-        <div class="section-card"><p class="section-label">Vendas — últimos 7 dias</p><div class="chart-wrap" id="chartWrap"></div></div>
+        <div class="section-card"><p class="section-label">Vendas no período</p><div class="chart-wrap" id="chartWrap"></div></div>
         <div class="section-card"><p class="section-label">Por forma de pagamento</p><div id="dashPagamentos"></div></div>
       </div>
       <div class="section-card"><p class="section-label">Produtos mais vendidos</p><div id="topProdutos"></div></div>
+      <div class="section-card"><p class="section-label">Origem dos pedidos</p><div id="dashOrigem"></div></div>
+    </section>
+
+    <!-- ESTOQUE -->
+    <section id="page-estoque" class="page">
+      <div class="page-header">
+        <div><h1 class="page-title">Estoque</h1><p class="page-sub">Visão geral dos seus produtos e quantidades</p></div>
+      </div>
+      <div class="kpi-grid estoque-kpi-grid" id="estoqueKpiGrid"></div>
+      <div class="section-card">
+        <p class="section-label">Situação dos produtos</p>
+        <div id="estoqueLista"></div>
+      </div>
     </section>
 
     <!-- VENDAS -->
@@ -114,44 +154,6 @@
       <div class="vendas-layout">
         <!-- COLUNA ESQUERDA: produtos + filtros -->
         <div class="vendas-col-left">
-
-          <!-- DESCONTO -->
-          <div class="section-card">
-            <p class="section-label">Desconto no pedido</p>
-            <div class="desconto-row">
-              <div class="desconto-tipo-wrap">
-                <button class="btn-desc-tipo ativo" id="desc-tipo-pct" onclick="setTipoDesconto('pct')">% Percentual</button>
-                <button class="btn-desc-tipo" id="desc-tipo-val" onclick="setTipoDesconto('val')">R$ Valor fixo</button>
-              </div>
-              <div class="desconto-input-wrap">
-                <input type="number" id="descontoInput" class="input-desconto" min="0" placeholder="0" oninput="atualizarTotal()">
-                <span class="desconto-sufixo" id="descontoSufixo">%</span>
-              </div>
-            </div>
-            <p class="desconto-preview" id="descontoPreview"></p>
-          </div>
-
-          <!-- PAGAMENTO -->
-          <div class="section-card">
-            <p class="section-label">Forma de pagamento</p>
-            <div class="pagamento-opcoes">
-              <button class="btn-pagamento ativo" id="pag-dinheiro" onclick="togglePagamento('dinheiro')">💵 Dinheiro</button>
-              <button class="btn-pagamento" id="pag-cartao" onclick="togglePagamento('cartao')">💳 Cartão</button>
-              <button class="btn-pagamento" id="pag-pix" onclick="togglePagamento('pix')">⚡ Pix</button>
-            </div>
-            <div class="pagamento-split hidden" id="pagamentoSplit"></div>
-          </div>
-
-          <!-- CLIENTE OPCIONAL -->
-          <div class="section-card">
-            <p class="section-label">Cliente <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--text3)">(opcional)</span></p>
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <select id="clienteSelecionado" style="flex:1;min-width:180px;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;color:var(--text);background:var(--input-bg);outline:none">
-                <option value="">— Venda sem cliente —</option>
-              </select>
-              <button class="btn-ghost" onclick="navegarPara('clientes')" style="white-space:nowrap">+ Novo cliente</button>
-            </div>
-          </div>
 
           <!-- PRODUTOS -->
           <div class="vendas-filtros">
@@ -177,6 +179,41 @@
             <div class="carrinho-footer" id="carrinhoFooter"></div>
           </div>
 
+          <div class="section-card">
+            <p class="section-label">Desconto no pedido</p>
+            <div class="desconto-row">
+              <div class="desconto-tipo-wrap">
+                <button class="btn-desc-tipo ativo" id="desc-tipo-pct" onclick="setTipoDesconto('pct')">% Percentual</button>
+                <button class="btn-desc-tipo" id="desc-tipo-val" onclick="setTipoDesconto('val')">R$ Valor fixo</button>
+              </div>
+              <div class="desconto-input-wrap">
+                <input type="number" id="descontoInput" class="input-desconto" min="0" placeholder="0" oninput="atualizarTotal()">
+                <span class="desconto-sufixo" id="descontoSufixo">%</span>
+              </div>
+            </div>
+            <p class="desconto-preview" id="descontoPreview"></p>
+          </div>
+
+          <div class="section-card">
+            <p class="section-label">Forma de pagamento</p>
+            <div class="pagamento-opcoes">
+              <button class="btn-pagamento ativo" id="pag-dinheiro" onclick="togglePagamento('dinheiro')">💵 Dinheiro</button>
+              <button class="btn-pagamento" id="pag-cartao" onclick="togglePagamento('cartao')">💳 Cartão</button>
+              <button class="btn-pagamento" id="pag-pix" onclick="togglePagamento('pix')">⚡ Pix</button>
+            </div>
+            <div class="pagamento-split hidden" id="pagamentoSplit"></div>
+          </div>
+
+          <div class="section-card">
+            <p class="section-label">Cliente <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--text3)">(opcional)</span></p>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <select id="clienteSelecionado" style="flex:1;min-width:180px;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;color:var(--text);background:var(--input-bg);outline:none">
+                <option value="">— Venda sem cliente —</option>
+              </select>
+              <button class="btn-ghost" onclick="navegarPara('clientes'); abrirFormularioCliente()" style="white-space:nowrap">+ Novo cliente</button>
+            </div>
+          </div>
+
           <div class="finalizar-bar">
             <div class="finalizar-resumo" id="finalizarResumo"></div>
             <button class="btn-primary" style="width:100%;justify-content:center;" onclick="finalizarPedido()">✓ Finalizar Pedido</button>
@@ -189,12 +226,19 @@
     <section id="page-admin" class="page">
       <div class="page-header">
         <div><h1 class="page-title">Produtos</h1><p class="page-sub">Gerencie seu catálogo de produtos</p></div>
+        <button class="btn-primary" onclick="abrirNovoProduto()">+ Novo produto</button>
       </div>
-      <div class="section-card">
+      <div class="admin-busca-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="search" id="buscaProdutosAdmin" class="input-busca" placeholder="Buscar produto por nome..." oninput="renderProdutosAdmin()">
+      </div>
+      <div class="section-card hidden" id="adminFormCard">
         <p class="section-label" id="adminFormLabel">Novo produto</p>
         <div class="form-row">
           <div class="field-group flex1"><label>Nome</label><input type="text" id="nomeProduto" placeholder="Ex: Coca-Cola"></div>
           <div class="field-group w120"><label>Preço (R$)</label><input type="number" id="precoProduto" placeholder="0,00"></div>
+          <div class="field-group w120"><label>Custo (R$) <span class="campo-opcional">opcional</span></label><input type="number" id="custoProduto" min="0" step="0.01" placeholder="0,00"></div>
+          <div class="field-group w120"><label>Estoque <span class="campo-opcional">opcional</span></label><input type="number" id="estoqueProduto" min="0" step="1" placeholder="0"></div>
         </div>
         <div class="form-row">
           <div class="field-group flex1">
@@ -219,7 +263,7 @@
         </div>
         <div class="form-actions">
           <button class="btn-primary" onclick="salvarProduto()">Salvar produto</button>
-          <button class="btn-ghost" onclick="cancelarEdicao()" id="btnCancelarEdicao" style="display:none">Cancelar</button>
+          <button class="btn-ghost" onclick="cancelarEdicao()" id="btnCancelarEdicao">Cancelar</button>
         </div>
       </div>
       <div id="listaProdutosAdmin" class="produtos-grid"></div>
@@ -229,8 +273,9 @@
     <section id="page-clientes" class="page">
       <div class="page-header">
         <div><h1 class="page-title">Clientes</h1><p class="page-sub">Cadastre e gerencie sua base de clientes</p></div>
+        <button class="btn-primary" onclick="abrirNovoCliente()">+ Novo cliente</button>
       </div>
-      <div class="section-card">
+      <div class="section-card hidden" id="clienteFormCard">
         <p class="section-label" id="clienteFormLabel">Novo cliente</p>
         <div class="form-row">
           <div class="field-group flex1"><label>Nome</label><input type="text" id="clienteNome" placeholder="Nome completo"></div>
@@ -246,7 +291,7 @@
         <p style="font-size:12px;color:var(--text3);margin-bottom:12px">Todos os campos são opcionais. Ao menos um deve ser preenchido.</p>
         <div class="form-actions">
           <button class="btn-primary" onclick="salvarCliente()">Salvar cliente</button>
-          <button class="btn-ghost" onclick="cancelarEdicaoCliente()" id="btnCancelarCliente" style="display:none">Cancelar</button>
+          <button class="btn-ghost" onclick="cancelarEdicaoCliente()" id="btnCancelarCliente">Cancelar</button>
         </div>
       </div>
       <!-- busca clientes -->
@@ -269,6 +314,14 @@
         </div>
       </div>
       <div class="section-card historico-filtros-card">
+        <p class="section-label">Tipo de histórico</p>
+        <div class="historico-filtros historico-tipos">
+          <button class="btn-filtro-periodo" onclick="setTipoHistorico('art')" id="historico-art">Histórico ART</button>
+          <button class="btn-filtro-periodo" onclick="setTipoHistorico('vendas')" id="historico-vendas">Histórico vendas</button>
+          <button class="btn-filtro-periodo ativo" onclick="setTipoHistorico('completo')" id="historico-completo">Histórico completo</button>
+        </div>
+      </div>
+      <div class="section-card historico-filtros-card">
         <p class="section-label">Filtrar por período</p>
         <div class="historico-filtros">
           <button class="btn-filtro-periodo ativo" onclick="setFiltroHistorico('hoje')" id="filtro-hoje">Hoje</button>
@@ -280,6 +333,12 @@
             <span>até</span>
             <input type="date" id="filtroDataFim" onchange="setFiltroHistorico('custom')">
           </div>
+        </div>
+      </div>
+      <div class="historico-busca-wrap">
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="buscaHistorico" class="input-busca" placeholder="Buscar por cliente ou produto...">
         </div>
       </div>
       <div id="listaHistorico"></div>
@@ -320,6 +379,39 @@
       </div>
     </section>
 
+    <!-- ATENDIMENTO RT -->
+    <section id="page-atendimento" class="page">
+      <div class="page-header">
+        <div><h1 class="page-title">Atendimento RT</h1><p class="page-sub">Catálogo público para clientes fazerem pedidos em tempo real</p></div>
+      </div>
+      <div class="section-card">
+        <p class="section-label">Produtos no catálogo</p>
+        <p style="font-size:13px;color:var(--text3);margin-bottom:14px">Marque os produtos que o cliente poderá pedir pelo link. A seleção fica salva para as próximas vezes.</p>
+        <div class="catalogo-selecao-acoes">
+          <button class="btn-ghost btn-sm" id="btnMarcarTodosCatalogo" onclick="marcarTodosCatalogoRT()">☑ Marcar todos</button>
+          <button class="btn-ghost btn-sm" id="btnDesmarcarTodosCatalogo" onclick="desmarcarTodosCatalogoRT()">☐ Desmarcar todos</button>
+        </div>
+        <div id="catalogoSelecaoLista" class="catalogo-check-lista"></div>
+      </div>
+      <div class="section-card">
+        <p class="section-label">Link do catálogo</p>
+        <p style="font-size:13px;color:var(--text3);margin-bottom:14px">Compartilhe este link com seus clientes. Qualquer pessoa com o link pode ver o catálogo e fazer um pedido — não precisa de login.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input type="text" id="catalogoLinkInput" readonly style="flex:1;min-width:220px;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--mono);font-size:13px;color:var(--text);background:var(--input-bg);outline:none">
+          <button class="btn-primary" onclick="copiarLinkCatalogoRT()">📋 Copiar link</button>
+        </div>
+      </div>
+      <div class="section-card">
+        <p class="section-label">Pedidos em tempo real</p>
+        <p style="font-size:13px;color:var(--text3);margin-bottom:14px">Aparecem aqui assim que o cliente finaliza o pedido pelo link.</p>
+        <div class="pedido-notificacoes-controle">
+          <button class="btn-ghost" id="btnAtivarNotificacoes" onclick="ativarNotificacoesPedidos()">🔔 Ativar notificações</button>
+          <span id="statusNotificacoesPedidos" class="pedido-notificacoes-status">Permita o som e as notificações do aparelho para ser avisado.</span>
+        </div>
+        <div id="feedPedidosRT" class="pedidos-rt-feed"></div>
+      </div>
+    </section>
+
     <!-- CONFIGURAÇÕES -->
     <section id="page-configuracoes" class="page">
       <div class="page-header">
@@ -355,6 +447,22 @@
             <input type="text" id="nomeLoja" placeholder="Ex: Lanchonete do João" style="flex:1;min-width:180px" oninput="atualizarPreviewLoja()">
             <button class="btn-primary" onclick="salvarNomeLoja()">Salvar</button>
           </div>
+        </div>
+        <div class="field-group" style="margin-bottom:14px">
+          <label>WhatsApp da loja <span style="color:var(--text3);font-weight:400">(usado no catálogo do Atendimento RT)</span></label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input type="text" id="whatsappLoja" placeholder="Ex: 5511999998888 (DDI+DDD+número)" style="flex:1;min-width:180px">
+            <button class="btn-primary" onclick="salvarWhatsappLoja()">Salvar</button>
+          </div>
+        </div>
+        <div class="field-group" style="margin-bottom:14px">
+          <label>Cupom de desconto do catálogo</label>
+          <div class="config-cupom-row">
+            <input type="text" id="cupomCodigoLoja" placeholder="Palavra do cupom" maxlength="30" style="flex:1;min-width:160px;text-transform:uppercase">
+            <div class="config-cupom-percentual"><input type="number" id="cupomPercentualLoja" min="1" max="100" step="1" placeholder="10"><span>%</span></div>
+            <button class="btn-primary" onclick="salvarCupomLoja()">Salvar cupom</button>
+          </div>
+          <span class="config-cupom-ajuda">O cliente informa essa palavra no link do catálogo para receber o desconto.</span>
         </div>
         <div class="loja-config-grid">
           <div>
@@ -407,6 +515,58 @@
       </div>
     </section>
 
+  </main>
+</div>
+
+<!-- ========== CATÁLOGO PÚBLICO (cliente, sem login) ========== -->
+<div id="catalogoScreen" class="catalogo-screen hidden">
+  <header class="catalogo-header">
+    <div class="catalogo-logo-wrap">
+      <img id="catalogoLogoImg" src="" alt="" style="display:none">
+      <span id="catalogoLogoLetra" class="catalogo-logo-letra"></span>
+    </div>
+    <div class="catalogo-header-texts">
+      <h1 id="catalogoLojaNome" class="catalogo-loja-nome">Catálogo</h1>
+      <p class="catalogo-loja-sub">Escolha os produtos e monte seu pedido</p>
+    </div>
+  </header>
+  <main class="catalogo-main">
+    <div id="catalogoListaProdutos" class="produtos-grid catalogo-grid"></div>
+
+    <div id="catalogoCarrinhoWrap" class="section-card catalogo-carrinho" style="display:none">
+      <div id="catalogoCarrinhoHandle" class="catalogo-carrinho-handle" aria-label="Arraste para baixo para minimizar o carrinho">
+        <span></span>
+      </div>
+      <p class="section-label">🛒 Seu pedido</p>
+      <div id="catalogoCarrinhoItens" class="carrinho-itens"></div>
+      <div class="catalogo-total-row">
+        <span>Total</span>
+        <span>R$ <span id="catalogoTotalValor">0,00</span></span>
+      </div>
+      <div id="catalogoCarrinhoMinimizado" class="catalogo-carrinho-minimizado-resumo" aria-hidden="true"></div>
+
+      <div class="catalogo-cupom-box">
+        <label for="catalogoCupomInput">Cupom de desconto</label>
+        <div class="catalogo-cupom-row">
+          <input type="text" id="catalogoCupomInput" placeholder="Digite seu cupom" maxlength="30" oninput="atualizarCupomCatalogo()">
+          <span id="catalogoCupomStatus" class="catalogo-cupom-status"></span>
+        </div>
+      </div>
+
+      <p class="section-label" style="margin-top:16px">Forma de pagamento</p>
+      <div class="pagamento-opcoes">
+        <button class="btn-pagamento ativo" id="catpag-dinheiro" onclick="togglePagamentoCatalogo('dinheiro')">💵 Dinheiro</button>
+        <button class="btn-pagamento" id="catpag-cartao" onclick="togglePagamentoCatalogo('cartao')">💳 Cartão</button>
+        <button class="btn-pagamento" id="catpag-pix" onclick="togglePagamentoCatalogo('pix')">⚡ Pix</button>
+      </div>
+      <div class="pagamento-split hidden" id="catalogoPagamentoSplit"></div>
+
+      <div class="form-row" style="margin-top:16px">
+        <div class="field-group flex1"><label>Seu nome</label><input type="text" id="catalogoClienteNome" placeholder="Nome completo"></div>
+        <div class="field-group w160"><label>WhatsApp</label><input type="text" id="catalogoClienteTelefone" placeholder="(00) 00000-0000" oninput="this.value=formatarTelefone(this.value)" maxlength="15"></div>
+      </div>
+      <button class="btn-primary full" onclick="finalizarPedidoCatalogo()">✓ Enviar pedido pelo WhatsApp</button>
+    </div>
   </main>
 </div>
 
@@ -477,6 +637,14 @@
         <button class="btn-ghost" onclick="fecharEditarVenda()">Cancelar</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div id="modalBaixoEstoque" class="modal-overlay hidden" onclick="if(event.target===this)fecharModalBaixoEstoque()">
+  <div class="modal-box baixo-estoque-modal">
+    <div class="modal-header"><h3 class="modal-title">📦 Produtos com baixo estoque</h3><button class="modal-close" onclick="fecharModalBaixoEstoque()">✕</button></div>
+    <p class="baixo-estoque-ajuda">Produtos com 5 unidades ou menos, ordenados do menor para o maior estoque.</p>
+    <div id="baixoEstoqueLista"></div>
   </div>
 </div>
 
