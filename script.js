@@ -1773,11 +1773,11 @@ function atualizarStatusNotificacoesPedidos() {
   const botao = document.getElementById("btnAtivarNotificacoes");
   const status = document.getElementById("statusNotificacoesPedidos");
   if (!botao || !status) return;
-  const permitido = !(("Notification" in window) && Notification.permission === "denied");
   const ativas = notificacoesPedidosAtivas();
-  botao.textContent = ativas ? "🔕 Desativar notificações" : "🔔 Ativar notificações";
+  const bloqueadas = "Notification" in window && Notification.permission === "denied";
+  botao.textContent = bloqueadas ? "🔔 Liberar nas configurações" : ativas ? "🔕 Desativar notificações" : "🔔 Ativar notificações";
   botao.disabled = false;
-  status.textContent = !("Notification" in window) ? "Este navegador não suporta notificações do aparelho." : Notification.permission === "denied" ? "Notificações bloqueadas. Libere-as nas configurações do navegador." : ativas ? "Você será avisado quando chegar um novo pedido." : "Permita o som e as notificações do aparelho para ser avisado.";
+  status.textContent = !("Notification" in window) ? "Este navegador não suporta notificações do aparelho." : bloqueadas ? "Notificações bloqueadas. Abra as configurações do navegador e permita notificações para este site." : ativas ? "Você será avisado quando chegar um novo pedido." : "Permita o som e as notificações do aparelho para ser avisado.";
 }
 
 function tocarNotificacaoPedido() {
