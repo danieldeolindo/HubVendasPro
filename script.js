@@ -690,6 +690,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function entrarNoPainel(user) {
   carrinho={}; pagamentosSelecionados=["dinheiro"]; splitPagamento={}; tipoDesconto="pct"; categoriaAtiva="todas"; filtroDashboard="hoje"; filtroHistorico="hoje"; filtroRelatorio="hoje";
+  audioPedidosLiberado = notificacoesPedidosAtivas();
+  idsPedidosRTConhecidos = new Set(pedidosRT.map(p => String(p.id)));
+  subscribeRealtimeAtendimento();
+  iniciarPollingPedidosRT();
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appShell").classList.remove("hidden");
   const av = lojaConfigAtual._avatarUrl || null;
@@ -1639,7 +1643,7 @@ function iniciarPollingPedidosRT() {
 }
 
 async function sincronizarPedidosRTPolling() {
-  if (!usuarioAtual || !document.getElementById("page-atendimento")?.classList.contains("active")) return;
+  if (!usuarioAtual) return;
   const { data, error } = await supabase.from("pedidos_rt").select("*").eq("loja_user_id", usuarioAtual.id).order("created_at", { ascending: false }).limit(50);
   if (error || !data) return;
   const feed = document.getElementById("feedPedidosRT");
@@ -1706,7 +1710,7 @@ function tocarNotificacaoPedido() {
       oscilador.type = "sine";
       oscilador.frequency.value = indice ? 880 : 660;
       ganho.gain.setValueAtTime(0.0001, agora + atraso);
-      ganho.gain.exponentialRampToValueAtTime(0.18, agora + atraso + 0.015);
+      ganho.gain.exponentialRampToValueAtTime(0.75, agora + atraso + 0.015);
       ganho.gain.exponentialRampToValueAtTime(0.0001, agora + atraso + 0.13);
       oscilador.connect(ganho).connect(audioContextPedidos.destination);
       oscilador.start(agora + atraso);
@@ -1720,7 +1724,7 @@ async function mostrarNotificacaoPedido(pedido) {
   const total = `R$ ${fmt(pedido.total)}`;
   tocarNotificacaoPedido();
   if ("Notification" in window && Notification.permission === "granted") {
-    const opcoes = { body: `${cliente} · ${total}`, tag: `pedido-${pedido.id}`, renotify: true, icon: "favicon/logo.png", badge: "favicon/logo.png", data: { url: window.location.href } };
+    const opcoes = { body: `${cliente} · ${total}`, tag: `pedido-${pedido.id}`, renotify: true, silent: false, vibrate: [300, 100, 300, 100, 500], icon: "favicon/logo.png", badge: "favicon/logo.png", data: { url: window.location.href } };
     try {
       if (registroServiceWorker) await registroServiceWorker.showNotification("Novo pedido recebido", opcoes);
       else {
@@ -1738,13 +1742,13 @@ function subscribeRealtimeAtendimento() {
       if (idsPedidosRTConhecidos.has(String(payload.new.id))) return;
       idsPedidosRTConhecidos.add(String(payload.new.id));
       pedidosRT.push(normalizarPedidoRT(payload.new));
+      mostrarToast("🔔 Novo pedido recebido!");
+      mostrarNotificacaoPedido(payload.new);
       const feed = document.getElementById("feedPedidosRT");
       if (!feed) return;
       const vazio = feed.querySelector(".catalogo-feed-vazio-msg");
       if (vazio) feed.innerHTML = "";
       feed.insertAdjacentHTML("afterbegin", renderPedidoRTCard(payload.new));
-      mostrarToast("🔔 Novo pedido recebido!");
-      mostrarNotificacaoPedido(payload.new);
       if (document.getElementById("page-dashboard")?.classList.contains("active")) renderDashboard();
       if (document.getElementById("page-historico")?.classList.contains("active")) renderHistorico();
     })
