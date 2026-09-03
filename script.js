@@ -1686,6 +1686,11 @@ async function ativarNotificacoesPedidos() {
     mostrarToast("Este navegador não suporta notificações do sistema.", "erro");
     return;
   }
+  if (!window.isSecureContext) {
+    atualizarStatusNotificacoesPedidos();
+    mostrarToast("Notificações exigem HTTPS. Abra o endereço seguro do sistema.", "erro");
+    return;
+  }
   if (Notification.permission === "default") {
     try { await Notification.requestPermission(); } catch {}
   }
@@ -1703,7 +1708,8 @@ async function ativarNotificacoesPedidos() {
   } catch (error) {
     console.warn("Web Push indisponível:", error);
     audioPedidosLiberado = false;
-    mostrarToast("Notificação do sistema não pôde ser ativada neste navegador.", "erro");
+    const detalhe = error?.message ? ` (${error.message})` : "";
+    mostrarToast(`Não foi possível ativar a notificação${detalhe}`, "erro");
     atualizarStatusNotificacoesPedidos();
     return;
   }
@@ -1725,11 +1731,15 @@ async function registrarInscricaoPush() {
     pushSubscription = await registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64ParaBytes(VAPID_PUBLIC_KEY) });
   }
   const json = pushSubscription.toJSON();
+  const chavePush = nome => {
+    const chave = pushSubscription.getKey(nome);
+    return chave ? btoa(String.fromCharCode(...new Uint8Array(chave))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : json.keys?.[nome];
+  };
   const { error } = await supabase.from("push_subscriptions").upsert({
     loja_user_id: usuarioAtual.id,
     endpoint: json.endpoint,
-    p256dh: json.keys?.p256dh,
-    auth: json.keys?.auth,
+    p256dh: chavePush("p256dh"),
+    auth: chavePush("auth"),
     user_agent: navigator.userAgent,
   }, { onConflict: "endpoint" });
   if (error) throw error;
@@ -1738,7 +1748,13 @@ async function registrarInscricaoPush() {
 async function restaurarInscricaoPush() {
   if (!notificacoesPedidosAtivas() || !usuarioAtual || !window.isSecureContext) return;
   if ("Notification" in window && Notification.permission === "granted") {
-    try { await registrarInscricaoPush(); } catch (error) { console.warn("Não foi possível restaurar o Web Push:", error); }
+    try {
+      await registrarInscricaoPush();
+    } catch (error) {
+      localStorage.removeItem(chaveNotificacoesPedidos());
+      audioPedidosLiberado = false;
+      console.warn("Não foi possível restaurar o Web Push:", error);
+    }
   }
 }
 
