@@ -9,6 +9,7 @@ const SUPABASE_URL = "https://ykfvccrfylnlbooqdrvu.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrZnZjY3JmeWxubGJvb3FkcnZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NDU2MjIsImV4cCI6MjA4ODIyMTYyMn0.aGoGx4g4u4cDinsHcm4QGcp6aL_KXs8VUsKXuyKBGdE";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const VAPID_PUBLIC_KEY = "BI8F3OYD9mwh0mKWyrZIsfkM81J0blMIF38uJe0Iu2IJXTCexaDSDkFzyUmfRdD-k_mD9iX5eGX53GTmV0veL6A";
 
 /* ─── Estado global ─── */
 let produtos  = [];
@@ -39,6 +40,7 @@ let idsPedidosRTConhecidos = new Set();
 let audioContextPedidos = null;
 let audioPedidosLiberado = false;
 let registroServiceWorker = null;
+let pushSubscription = null;
 
 function chaveNotificacoesPedidos() { return usuarioAtual ? `hvp-notificacoes-pedidos-${usuarioAtual.id}` : "hvp-notificacoes-pedidos"; }
 function notificacoesPedidosAtivas() { return localStorage.getItem(chaveNotificacoesPedidos()) === "1"; }
@@ -1671,6 +1673,7 @@ async function ativarNotificacoesPedidos() {
   if (notificacoesPedidosAtivas()) {
     localStorage.removeItem(chaveNotificacoesPedidos());
     audioPedidosLiberado = false;
+    await removerInscricaoPush();
     atualizarStatusNotificacoesPedidos();
     mostrarToast("Notificações de pedidos desativadas.");
     return;
@@ -1684,8 +1687,48 @@ async function ativarNotificacoesPedidos() {
   if ("Notification" in window && Notification.permission === "default") {
     try { await Notification.requestPermission(); } catch {}
   }
+  if ("Notification" in window && Notification.permission === "granted") {
+    try {
+      await registrarInscricaoPush();
+    } catch (error) {
+      console.warn("Web Push indisponível:", error);
+      mostrarToast("Notificação do sistema não pôde ser ativada neste navegador.", "erro");
+    }
+  }
   atualizarStatusNotificacoesPedidos();
   mostrarToast("✅ Notificações de pedidos ativadas.");
+}
+
+function base64ParaBytes(valor) {
+  const preenchimento = "=".repeat((4 - valor.length % 4) % 4);
+  const base64 = (valor + preenchimento).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), caractere => caractere.charCodeAt(0));
+}
+
+async function registrarInscricaoPush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Push não suportado");
+  const registro = await navigator.serviceWorker.ready;
+  pushSubscription = await registro.pushManager.getSubscription();
+  if (!pushSubscription) {
+    pushSubscription = await registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64ParaBytes(VAPID_PUBLIC_KEY) });
+  }
+  const json = pushSubscription.toJSON();
+  const { error } = await supabase.from("push_subscriptions").upsert({
+    loja_user_id: usuarioAtual.id,
+    endpoint: json.endpoint,
+    p256dh: json.keys?.p256dh,
+    auth: json.keys?.auth,
+    user_agent: navigator.userAgent,
+  }, { onConflict: "endpoint" });
+  if (error) throw error;
+}
+
+async function removerInscricaoPush() {
+  if (!pushSubscription) return;
+  const endpoint = pushSubscription.endpoint;
+  try { await pushSubscription.unsubscribe(); } catch {}
+  await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  pushSubscription = null;
 }
 
 function atualizarStatusNotificacoesPedidos() {
@@ -1704,17 +1747,17 @@ function tocarNotificacaoPedido() {
   try {
     audioContextPedidos = audioContextPedidos || new (window.AudioContext || window.webkitAudioContext)();
     const agora = audioContextPedidos.currentTime;
-    [0, 0.16].forEach((atraso, indice) => {
+    [0, 0.16, 0.65, 0.81, 1.3, 1.46].forEach((atraso, indice) => {
       const oscilador = audioContextPedidos.createOscillator();
       const ganho = audioContextPedidos.createGain();
       oscilador.type = "sine";
-      oscilador.frequency.value = indice ? 880 : 660;
+      oscilador.frequency.value = indice % 2 ? 1040 : 760;
       ganho.gain.setValueAtTime(0.0001, agora + atraso);
-      ganho.gain.exponentialRampToValueAtTime(0.75, agora + atraso + 0.015);
-      ganho.gain.exponentialRampToValueAtTime(0.0001, agora + atraso + 0.13);
+      ganho.gain.exponentialRampToValueAtTime(0.95, agora + atraso + 0.015);
+      ganho.gain.exponentialRampToValueAtTime(0.0001, agora + atraso + 0.19);
       oscilador.connect(ganho).connect(audioContextPedidos.destination);
       oscilador.start(agora + atraso);
-      oscilador.stop(agora + atraso + 0.14);
+      oscilador.stop(agora + atraso + 0.2);
     });
   } catch {}
 }
@@ -1723,8 +1766,8 @@ async function mostrarNotificacaoPedido(pedido) {
   const cliente = pedido.cliente_nome || "Cliente";
   const total = `R$ ${fmt(pedido.total)}`;
   tocarNotificacaoPedido();
-  if ("Notification" in window && Notification.permission === "granted") {
-    const opcoes = { body: `${cliente} · ${total}`, tag: `pedido-${pedido.id}`, renotify: true, silent: false, vibrate: [300, 100, 300, 100, 500], icon: "favicon/logo.png", badge: "favicon/logo.png", data: { url: window.location.href } };
+  if (!pushSubscription && "Notification" in window && Notification.permission === "granted") {
+    const opcoes = { body: `${cliente} · ${total}`, tag: `pedido-${pedido.id}`, renotify: true, requireInteraction: true, silent: false, vibrate: [400, 100, 400, 100, 700], icon: "favicon/logo.png", badge: "favicon/logo.png", data: { url: window.location.href } };
     try {
       if (registroServiceWorker) await registroServiceWorker.showNotification("Novo pedido recebido", opcoes);
       else {
