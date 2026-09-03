@@ -693,6 +693,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function entrarNoPainel(user) {
   carrinho={}; pagamentosSelecionados=["dinheiro"]; splitPagamento={}; tipoDesconto="pct"; categoriaAtiva="todas"; filtroDashboard="hoje"; filtroHistorico="hoje"; filtroRelatorio="hoje";
   audioPedidosLiberado = notificacoesPedidosAtivas();
+  restaurarInscricaoPush();
   idsPedidosRTConhecidos = new Set(pedidosRT.map(p => String(p.id)));
   subscribeRealtimeAtendimento();
   iniciarPollingPedidosRT();
@@ -1624,9 +1625,9 @@ async function carregarPedidosRTIniciais() {
   }
   pedidosRT = data || [];
   idsPedidosRTConhecidos = new Set(pedidosRT.map(p => String(p.id)));
+  atualizarStatusNotificacoesPedidos();
   if (!data?.length) { feed.innerHTML = `<p class="catalogo-feed-vazio-msg" style="color:var(--text3);font-size:13px;padding:8px 0">Nenhum pedido encontrado. Compartilhe o link do catálogo com seus clientes.</p>`; iniciarAtualizacaoDiariaFeedRT(); return; }
   feed.innerHTML = data.map(renderPedidoRTCard).join("");
-  atualizarStatusNotificacoesPedidos();
   iniciarAtualizacaoDiariaFeedRT();
 }
 
@@ -1670,6 +1671,8 @@ function pedidoRTEhDeHoje(pedido) {
 }
 
 async function ativarNotificacoesPedidos() {
+  const botao = document.getElementById("btnAtivarNotificacoes");
+  if (botao) botao.disabled = true;
   if (notificacoesPedidosAtivas()) {
     localStorage.removeItem(chaveNotificacoesPedidos());
     audioPedidosLiberado = false;
@@ -1678,22 +1681,31 @@ async function ativarNotificacoesPedidos() {
     mostrarToast("Notificações de pedidos desativadas.");
     return;
   }
-  localStorage.setItem(chaveNotificacoesPedidos(), "1");
-  audioPedidosLiberado = true;
-  try {
-    audioContextPedidos = audioContextPedidos || new (window.AudioContext || window.webkitAudioContext)();
-    await audioContextPedidos.resume();
-  } catch {}
-  if ("Notification" in window && Notification.permission === "default") {
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    atualizarStatusNotificacoesPedidos();
+    mostrarToast("Este navegador não suporta notificações do sistema.", "erro");
+    return;
+  }
+  if (Notification.permission === "default") {
     try { await Notification.requestPermission(); } catch {}
   }
-  if ("Notification" in window && Notification.permission === "granted") {
-    try {
-      await registrarInscricaoPush();
-    } catch (error) {
-      console.warn("Web Push indisponível:", error);
-      mostrarToast("Notificação do sistema não pôde ser ativada neste navegador.", "erro");
-    }
+  if (Notification.permission !== "granted") {
+    atualizarStatusNotificacoesPedidos();
+    mostrarToast("Permita as notificações nas configurações do navegador.", "erro");
+    return;
+  }
+  try {
+    await registrarInscricaoPush();
+    localStorage.setItem(chaveNotificacoesPedidos(), "1");
+    audioPedidosLiberado = true;
+    audioContextPedidos = audioContextPedidos || new (window.AudioContext || window.webkitAudioContext)();
+    await audioContextPedidos.resume();
+  } catch (error) {
+    console.warn("Web Push indisponível:", error);
+    audioPedidosLiberado = false;
+    mostrarToast("Notificação do sistema não pôde ser ativada neste navegador.", "erro");
+    atualizarStatusNotificacoesPedidos();
+    return;
   }
   atualizarStatusNotificacoesPedidos();
   mostrarToast("✅ Notificações de pedidos ativadas.");
@@ -1723,7 +1735,17 @@ async function registrarInscricaoPush() {
   if (error) throw error;
 }
 
+async function restaurarInscricaoPush() {
+  if (!notificacoesPedidosAtivas() || !usuarioAtual || !window.isSecureContext) return;
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { await registrarInscricaoPush(); } catch (error) { console.warn("Não foi possível restaurar o Web Push:", error); }
+  }
+}
+
 async function removerInscricaoPush() {
+  if (!pushSubscription && "serviceWorker" in navigator) {
+    try { pushSubscription = await (await navigator.serviceWorker.ready).pushManager.getSubscription(); } catch {}
+  }
   if (!pushSubscription) return;
   const endpoint = pushSubscription.endpoint;
   try { await pushSubscription.unsubscribe(); } catch {}
