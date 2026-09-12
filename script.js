@@ -1189,7 +1189,7 @@ function imprimirComprovante() {
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Courier New',monospace;font-size:13px;margin:0;padding:16px;background:#fff;color:#000;}.cupom{max-width:320px;margin:0 auto;}.cupom-header{text-align:center;margin-bottom:10px;}.cupom-logo{font-size:18px;font-weight:900;}.cupom-sub,.cupom-info{font-size:11px;color:#555;}.cv-cliente{font-size:12px;margin:4px 0 0;}.cupom-divider{text-align:center;font-size:11px;color:#aaa;margin:8px 0;}.cupom-itens{width:100%;border-collapse:collapse;font-size:12px;}.cupom-itens th{text-align:left;border-bottom:1px solid #ccc;padding-bottom:4px;}.cupom-itens td{padding:3px 0;}.c,.th.c{text-align:center;}.r,.th.r{text-align:right;}.cupom-totais{font-size:13px;}.cupom-linha{display:flex;justify-content:space-between;padding:3px 0;}.cupom-linha.desc{color:#c00;}.cupom-linha.total{font-weight:900;font-size:15px;border-top:1px solid #000;padding-top:6px;margin-top:2px;}.cupom-pagamento{font-size:12px;margin:6px 0;}.cupom-footer{text-align:center;font-size:11px;color:#888;margin-top:10px;}@media print{body{padding:0;}@page{margin:10mm 5mm;}}</style></head><body>${html}<script>window.onload=()=>{window.print();}<\/script></body></html>`);
   w.document.close();
 }
-function baixarComprovantePDF() {
+function criarPDFComprovante() {
   if (typeof window.jspdf==="undefined"&&typeof jspdf==="undefined"){mostrarToast("PDF indisponível.","erro");imprimirComprovante();return;}
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:"mm",format:[80,200]});
@@ -1215,7 +1215,30 @@ function baixarComprovantePDF() {
   doc.text(pagLines,4,y);y+=pagLines.length*4+3;
   doc.text("- ".repeat(22),4,y);y+=5;
   doc.setTextColor(120,120,120);doc.text("HubVendasPro · Obrigado!",40,y,{align:"center"});
-  doc.save(`comprovante_${v.data.replace(/\//g,"-")}_${v.hora?.replace(/:/g,"-")||"00-00"}.pdf`);
+  return {
+    doc,
+    nomeArquivo: `comprovante_${v.data.replace(/\//g,"-")}_${v.hora?.replace(/:/g,"-")||"00-00"}.pdf`
+  };
+}
+function baixarComprovantePDF() {
+  const pdf=criarPDFComprovante();
+  if (!pdf) return;
+  pdf.doc.save(pdf.nomeArquivo);
+}
+async function compartilharComprovantePDF() {
+  if (!vendaComprovanteAtual) return;
+  if (typeof window.jspdf==="undefined"&&typeof jspdf==="undefined"){mostrarToast("PDF indisponível.","erro");return;}
+  if (!navigator.share||!navigator.canShare){mostrarToast("Seu navegador não permite compartilhar arquivos PDF.","erro");return;}
+  const pdf=criarPDFComprovante();
+  if (!pdf) return;
+  const arquivo=new File([pdf.doc.output("blob")],pdf.nomeArquivo,{type:"application/pdf"});
+  if (!navigator.canShare({files:[arquivo]})){mostrarToast("Seu navegador não permite compartilhar arquivos PDF.","erro");return;}
+  try {
+    await navigator.share({title:"Comprovante de venda",text:"Comprovante de venda",files:[arquivo]});
+    mostrarToast("✅ Comprovante compartilhado!");
+  } catch (erro) {
+    if (erro.name!=="AbortError") mostrarToast("Não foi possível compartilhar o comprovante.","erro");
+  }
 }
 
 /* ─────────────────────────────────────────
@@ -2197,7 +2220,7 @@ Object.assign(window, {
   setTipoHistorico, setFiltroHistorico, setFiltroDashboard, cancelarVenda, abrirComprovanteHistorico, abrirEditarVenda,
   abrirModalBaixoEstoque, fecharModalBaixoEstoque, editarProdutoDoDashboard,
   // Comprovante
-  fecharComprovante, imprimirComprovante, baixarComprovantePDF,
+  fecharComprovante, imprimirComprovante, baixarComprovantePDF, compartilharComprovantePDF,
   // Editar venda
   fecharEditarVenda, confirmarSenhaAdmin, editarItemQtd, removerItemEditar,
   setEditTipoDesconto, toggleEditPagamento, onEditSplitInput, salvarEdicaoVenda,
