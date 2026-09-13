@@ -1192,29 +1192,32 @@ function imprimirComprovante() {
 function criarPDFComprovante() {
   if (typeof window.jspdf==="undefined"&&typeof jspdf==="undefined"){mostrarToast("PDF indisponível.","erro");imprimirComprovante();return;}
   const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({unit:"mm",format:[80,200]});
   const v=vendaComprovanteAtual, loja=lojaConfigAtual.nome||"HubVendasPro";
-  let y=10; const lw=68;
-  doc.setFont("Courier","bold");doc.setFontSize(14);doc.text(loja,40,y,{align:"center"});y+=6;
-  doc.setFont("Courier","normal");doc.setFontSize(9);doc.text("Comprovante de Venda",40,y,{align:"center"});y+=4;
-  doc.text(`${v.data} às ${v.hora||""}`,40,y,{align:"center"});y+=4;
-  if (v.clienteNome){doc.text(`Cliente: ${v.clienteNome}`,40,y,{align:"center"});y+=4;}
-  if (v.clienteEndereco){doc.text(`Endereco: ${v.clienteEndereco}`,40,y,{align:"center"});y+=4;}
-  if (v.clienteId){const cli=clientes.find(c=>c.id===v.clienteId);if(cli?.cpf){doc.text(`CPF: ${cli.cpf}`,40,y,{align:"center"});y+=4;}}
-  doc.text("- ".repeat(22),4,y);y+=5;
-  doc.setFont("Courier","bold");doc.setFontSize(9);doc.text("Produto",4,y);doc.text("Qtd",52,y,{align:"center"});doc.text("Valor",76,y,{align:"right"});y+=4;
+  const linhasEstimadas=v.itens.reduce((total,item)=>total+Math.max(1,Math.ceil(String(typeof item==="string"?item:item.nome||"").length/28)),0);
+  const doc=new jsPDF({unit:"mm",format:[80,Math.max(200,110+linhasEstimadas*5)]});
+  let y=10; const margem=4, largura=72, colunaQtd=53, colunaValor=76, passo=4;
+  const textoSeguro=texto=>String(texto||"").replace(/[\u{1F000}-\u{1FAFF}\u2600-\u27BF]/gu,"").replace(/[·−]/g,"-");
+  const escreverCentro=texto=>{const linhas=doc.splitTextToSize(textoSeguro(texto),largura);doc.text(linhas,40,y,{align:"center"});y+=linhas.length*passo;};
+  const divisor=()=>{doc.text("- ".repeat(22),margem,y);y+=5;};
+  doc.setFont("Courier","bold");doc.setFontSize(14);escreverCentro(loja);y+=1;
+  doc.setFont("Courier","normal");doc.setFontSize(9);escreverCentro("Comprovante de Venda");escreverCentro(`${v.data} as ${v.hora||""}`);
+  if (v.clienteNome){doc.setFontSize(8);escreverCentro(`Cliente: ${v.clienteNome}`);}
+  if (v.clienteEndereco){doc.setFontSize(8);escreverCentro(`Endereco: ${v.clienteEndereco}`);}
+  if (v.clienteId){const cli=clientes.find(c=>c.id===v.clienteId);if(cli?.cpf){doc.setFontSize(8);escreverCentro(`CPF: ${cli.cpf}`);}}
+  divisor();
+  doc.setFont("Courier","bold");doc.setFontSize(9);doc.text("Produto",margem,y);doc.text("Qtd",colunaQtd,y,{align:"center"});doc.text("Valor",colunaValor,y,{align:"right"});y+=5;
   doc.setFont("Courier","normal");
-  v.itens.forEach(i=>{const sku=i.skuId?`#${String(i.skuId).padStart(4,"0")} `:"";const nm=(sku+(typeof i==="string"?i:i.nome)).substring(0,28);const q=typeof i==="string"?1:i.quantidade;const val=typeof i==="string"?0:i.preco*i.quantidade;doc.text(nm,4,y);doc.text(String(q),52,y,{align:"center"});doc.text(`R$${fmt(val)}`,76,y,{align:"right"});y+=4;});
-  doc.text("- ".repeat(22),4,y);y+=5;
-  doc.text("Subtotal",4,y);doc.text(`R$${fmt(v.subtotal||v.total)}`,76,y,{align:"right"});y+=4;
-  if (v.desconto>0){doc.setTextColor(180,0,0);doc.text("Desconto",4,y);doc.text(`-R$${fmt(v.desconto)}`,76,y,{align:"right"});y+=4;doc.setTextColor(0,0,0);}
-  doc.setFont("Courier","bold");doc.setFontSize(12);doc.text("TOTAL",4,y);doc.text(`R$${fmt(v.total)}`,76,y,{align:"right"});y+=6;
-  doc.setFont("Courier","normal");doc.setFontSize(9);doc.text("- ".repeat(22),4,y);y+=5;
-  const pags=v.pagamentos&&Object.keys(v.pagamentos).length?Object.entries(v.pagamentos).filter(([,val])=>val>0).map(([t,val])=>`${ICONE_PAGAMENTO[t]}: R$${fmt(val)}`).join(", "):ICONE_PAGAMENTO[v.pagamento||"dinheiro"];
-  const pagLines=doc.splitTextToSize(`Pagamento: ${pags}`,lw);
-  doc.text(pagLines,4,y);y+=pagLines.length*4+3;
-  doc.text("- ".repeat(22),4,y);y+=5;
-  doc.setTextColor(120,120,120);doc.text("HubVendasPro · Obrigado!",40,y,{align:"center"});
+  v.itens.forEach(i=>{const sku=i.skuId?`#${String(i.skuId).padStart(4,"0")} `:"";const nome=textoSeguro(sku+(typeof i==="string"?i:i.nome));const nomeLinhas=doc.splitTextToSize(nome,42);const q=typeof i==="string"?1:i.quantidade;const val=typeof i==="string"?0:i.preco*i.quantidade;doc.text(nomeLinhas,4,y);doc.text(String(q),colunaQtd,y,{align:"center"});doc.text(`R$${fmt(val)}`,colunaValor,y,{align:"right"});y+=Math.max(1,nomeLinhas.length)*passo;});
+  divisor();
+  doc.text("Subtotal",margem,y);doc.text(`R$${fmt(v.subtotal||v.total)}`,colunaValor,y,{align:"right"});y+=passo;
+  if (v.desconto>0){doc.setTextColor(180,0,0);doc.text("Desconto",margem,y);doc.text(`-R$${fmt(v.desconto)}`,colunaValor,y,{align:"right"});y+=passo;doc.setTextColor(0,0,0);}
+  doc.setFont("Courier","bold");doc.setFontSize(12);doc.text("TOTAL",margem,y);doc.text(`R$${fmt(v.total)}`,colunaValor,y,{align:"right"});y+=6;
+  doc.setFont("Courier","normal");doc.setFontSize(9);divisor();
+  const nomesPagamento={dinheiro:"Dinheiro",cartao:"Cartao",pix:"Pix"};
+  const pags=v.pagamentos&&Object.keys(v.pagamentos).length?Object.entries(v.pagamentos).filter(([,val])=>val>0).map(([t,val])=>`${nomesPagamento[t]||t}: R$${fmt(val)}`).join(", "):(nomesPagamento[v.pagamento||"dinheiro"]||v.pagamento||"Dinheiro");
+  const pagLines=doc.splitTextToSize(`Pagamento: ${pags}`,largura);doc.text(pagLines,margem,y);y+=pagLines.length*passo+3;
+  divisor();
+  doc.setTextColor(120,120,120);doc.text("HubVendasPro - Obrigado!",40,y,{align:"center"});
   return {
     doc,
     nomeArquivo: `comprovante_${v.data.replace(/\//g,"-")}_${v.hora?.replace(/:/g,"-")||"00-00"}.pdf`
