@@ -1,0 +1,17 @@
+{
+  "name": "HubVendasPro",
+  "short_name": "HubVendas",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f2",
+  "theme_color": "#00bf63",
+  "description": "Gestão de vendas e atendimento em tempo real.",
+  "icons": [
+    {
+      "src": "favicon/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
