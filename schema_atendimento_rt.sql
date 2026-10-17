@@ -102,7 +102,8 @@ BEGIN
     SELECT id INTO cliente_existente
     FROM clientes
     WHERE user_id = p_loja_user_id
-      AND regexp_replace(COALESCE(telefone, ''), '\D', '', 'g') = telefone_normalizado
+      AND regexp_replace(COALESCE(telefone, ''), '\D', '', 'g') IN (telefone_normalizado, '55' || telefone_normalizado)
+      AND lower(trim(COALESCE(nome, ''))) = lower(COALESCE(NULLIF(trim(p_cliente_nome), ''), 'Cliente'))
     LIMIT 1;
 
     IF cliente_existente IS NULL THEN

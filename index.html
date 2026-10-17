@@ -208,11 +208,15 @@
 
           <div class="section-card">
             <p class="section-label">Cliente <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--text3)">(opcional)</span></p>
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <select id="clienteSelecionado" style="flex:1;min-width:180px;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;color:var(--text);background:var(--input-bg);outline:none">
-                <option value="">— Venda sem cliente —</option>
-              </select>
-              <button class="btn-ghost" onclick="abrirModalNovoCliente()" style="white-space:nowrap">+ Novo cliente</button>
+            <div class="venda-cliente-selecao">
+              <div class="venda-cliente-busca">
+                <div class="search-wrap">
+                  <span class="search-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+                  <input type="search" id="buscaClienteVenda" class="input-busca" placeholder="Buscar cliente por nome ou telefone..." autocomplete="off" oninput="filtrarClientesVenda()">
+                </div>
+                <div id="sugestoesClientesVenda" class="venda-cliente-sugestoes hidden" role="listbox" aria-label="Sugestões de clientes"></div>
+              </div>
+              <button class="btn-ghost venda-novo-cliente" onclick="abrirModalNovoCliente()">+ Novo cliente</button>
             </div>
           </div>
 
@@ -323,6 +327,16 @@
           <button class="btn-primary" onclick="salvarClienteModal()">Salvar cliente</button>
           <button class="btn-ghost" onclick="fecharModalNovoCliente()">Cancelar</button>
         </div>
+      </div>
+    </div>
+
+    <div id="modalPerfilCliente" class="modal-overlay hidden" onclick="if(event.target===this)fecharPerfilCliente()">
+      <div class="modal-box perfil-cliente-modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Perfil do cliente</h3>
+          <button class="modal-close" onclick="fecharPerfilCliente()" aria-label="Fechar"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div id="perfilClienteConteudo"></div>
       </div>
     </div>
 

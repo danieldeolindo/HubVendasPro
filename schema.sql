@@ -44,8 +44,9 @@ CREATE TABLE IF NOT EXISTS historico (
   total         NUMERIC DEFAULT 0,
   pagamento     TEXT    DEFAULT 'dinheiro',
   pagamentos    JSONB   DEFAULT '{}',
-  cliente_id    INT,
+  cliente_id    TEXT,
   cliente_nome  TEXT    DEFAULT '',
+  cliente_telefone TEXT DEFAULT '',
   cliente_endereco TEXT   DEFAULT '',
   cancelada     BOOLEAN DEFAULT FALSE,
   created_at    TIMESTAMPTZ DEFAULT NOW()

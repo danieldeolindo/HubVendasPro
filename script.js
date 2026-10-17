@@ -21,6 +21,7 @@ let carrinho               = {};
 let usuarioAtual           = null;  // objeto Supabase User
 let editandoId             = null;
 let editandoClienteId      = null;
+let clienteVendaSelecionadoId = null;
 let pagamentosSelecionados = ["dinheiro"];
 let splitPagamento         = {};
 let tipoDesconto           = "pct";
@@ -123,6 +124,19 @@ function formatarTelefone(v) {
   if (v.length<=10) return `(${v.slice(0,2)})${v.slice(2,6)}-${v.slice(6)}`;
   return `(${v.slice(0,2)})${v.slice(2,7)}-${v.slice(7,11)}`;
 }
+function normalizarTexto(valor) {
+  return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+function normalizarTelefoneCliente(valor) {
+  let telefone = String(valor || "").replace(/\D/g, "");
+  if (telefone.startsWith("55") && (telefone.length === 12 || telefone.length === 13)) telefone = telefone.slice(2);
+  return telefone;
+}
+function escaparHTML(valor) {
+  return String(valor ?? "").replace(/[&<>"']/g, caractere => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[caractere]);
+}
 function normalizarTelefoneWhatsApp(v) {
   const digits = String(v || "").replace(/\D/g, "");
   if (!digits) return "";
@@ -206,7 +220,9 @@ async function carregarDadosUsuario() {
       pagamentos:   h.pagamentos || {},
       clienteId:    h.cliente_id,
       clienteNome:  h.cliente_nome || "",
+      clienteTelefone: h.cliente_telefone || "",
       clienteEndereco: h.cliente_endereco || "",
+      createdAt:    h.created_at || "",
       cancelada:    h.cancelada || false,
     }));
     pedidosRT = (rtRes.data || []).map(normalizarPedidoRT);
@@ -292,6 +308,7 @@ async function fbSalvarVenda(venda) {
       pagamentos:   venda.pagamentos || {},
       cliente_id:   venda.clienteId || null,
       cliente_nome: venda.clienteNome || "",
+      cliente_telefone: venda.clienteTelefone || "",
       cliente_endereco: venda.clienteEndereco || "",
       cancelada:    venda.cancelada || false,
     };
@@ -563,7 +580,7 @@ function navegarPara(pagina) {
   renderNavs(pagina);
   if (pagina==="dashboard")     renderDashboard();
   if (pagina==="estoque")       renderEstoque();
-  if (pagina==="vendas")        { renderProdutos(); popularSelectClientes(); }
+  if (pagina==="vendas")        { renderProdutos(); atualizarSugestoesClientesVenda(); }
   if (pagina==="admin")         { renderProdutosAdmin(); atualizarSugestoesCategorias(); }
   if (pagina==="clientes")      renderClientes();
   if (pagina==="historico")     renderHistorico();
@@ -627,6 +644,7 @@ function limparSessao() {
   if (timerPollingPedidosRT) { clearInterval(timerPollingPedidosRT); timerPollingPedidosRT=null; }
   usuarioAtual = null;
   produtos=[]; historico=[]; pedidosRT=[]; clientes=[]; carrinho={};
+  clienteVendaSelecionadoId=null;
   lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:""};
   _menuOrdemLocal=null;
   document.documentElement.setAttribute("data-theme","light");
@@ -693,6 +711,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function entrarNoPainel(user) {
   carrinho={}; pagamentosSelecionados=["dinheiro"]; splitPagamento={}; tipoDesconto="pct"; categoriaAtiva="todas"; filtroDashboard="hoje"; filtroHistorico="hoje"; filtroRelatorio="hoje";
+  clienteVendaSelecionadoId=null;
+  const buscaClienteVenda=document.getElementById("buscaClienteVenda");
+  if (buscaClienteVenda) buscaClienteVenda.value="";
   audioPedidosLiberado = notificacoesPedidosAtivas();
   restaurarInscricaoPush();
   idsPedidosRTConhecidos = new Set(pedidosRT.map(p => String(p.id)));
@@ -708,7 +729,7 @@ function entrarNoPainel(user) {
   renderBotoesPagamento(); renderNavs("vendas");
   document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
   document.getElementById("page-vendas")?.classList.add("active");
-  renderProdutos(); popularSelectClientes();
+  renderProdutos(); atualizarSugestoesClientesVenda();
 }
 
 /* ─────────────────────────────────────────
@@ -743,7 +764,7 @@ async function salvarCliente() {
     if (fid) { novoCliente.firestoreId=fid; clientes.push(novoCliente); }
     mostrarToast("Cliente cadastrado!");
   }
-  limparCamposCliente(); fecharFormularioCliente(); renderClientes(); popularSelectClientes();
+  limparCamposCliente(); fecharFormularioCliente(); renderClientes(); atualizarSugestoesClientesVenda();
 }
 
 function limparCamposCliente() {
@@ -787,8 +808,10 @@ async function salvarClienteModal() {
   const cliente={id:proximoIdCliente(),nome,telefone,endereco,cpf:"",email:""};
   const fid=await fbSalvarCliente(cliente);
   if (!fid) return;
-  cliente.firestoreId=fid; clientes.push(cliente); popularSelectClientes();
-  document.getElementById("clienteSelecionado").value=String(cliente.id);
+  cliente.firestoreId=fid; clientes.push(cliente);
+  clienteVendaSelecionadoId=cliente.id;
+  document.getElementById("buscaClienteVenda").value=cliente.nome || cliente.telefone || "";
+  atualizarSugestoesClientesVenda();
   fecharModalNovoCliente(); mostrarToast("Cliente cadastrado!");
 }
 function abrirNovoCliente() {
@@ -806,41 +829,156 @@ async function excluirCliente(id) {
   const c=clientes.find(c=>c.id===id);
   if (c?.firestoreId) await fbDeletarCliente(c.firestoreId);
   clientes=clientes.filter(c=>c.id!==id);
-  renderClientes(); popularSelectClientes(); mostrarToast("Cliente excluído.");
+  renderClientes(); atualizarSugestoesClientesVenda(); mostrarToast("Cliente excluído.");
 }
 
 function renderClientes() {
   const lista=document.getElementById("listaClientes"); if (!lista) return;
-  const busca=(document.getElementById("buscaClientes")?.value||"").toLowerCase().trim();
+  const busca=normalizarTexto(document.getElementById("buscaClientes")?.value);
   const filtrados=clientes.filter(c=>{
     if (!busca) return true;
-    return (c.nome||"").toLowerCase().includes(busca)||(c.telefone||"").includes(busca)||(c.cpf||"").includes(busca)||(c.email||"").toLowerCase().includes(busca);
+    return normalizarTexto(c.nome).includes(busca)||(c.telefone||"").includes(busca)||(c.cpf||"").includes(busca)||normalizarTexto(c.email).includes(busca);
   });
   if (!filtrados.length) { lista.innerHTML=`<div class="empty-state"><span>${ic("users")}</span>${busca?"Nenhum cliente encontrado.":"Nenhum cliente cadastrado ainda."}</div>`; return; }
   lista.innerHTML=filtrados.map(c=>`
     <div class="cliente-card">
-      <div class="cliente-avatar">${(c.nome||"?")[0].toUpperCase()}</div>
+      <div class="cliente-avatar">${escaparHTML((c.nome||"?")[0].toUpperCase())}</div>
       <div class="cliente-info">
-        <p class="cliente-nome">${c.nome||"<em>Sem nome</em>"}</p>
+        <p class="cliente-nome">${c.nome?escaparHTML(c.nome):"<em>Sem nome</em>"}</p>
         <div class="cliente-detalhes">
-          ${c.telefone?`<span>${ic("smartphone")} ${c.telefone}</span>`:""}
-          ${c.cpf?`<span>${ic("id-card")} ${c.cpf}</span>`:""}
-          ${c.email?`<span>${ic("mail")} ${c.email}</span>`:""}
-          ${c.endereco?`<span>${ic("map-pin")} ${c.endereco}</span>`:""}
+          ${c.telefone?`<span>${ic("smartphone")} ${escaparHTML(c.telefone)}</span>`:""}
+          ${c.cpf?`<span>${ic("id-card")} ${escaparHTML(c.cpf)}</span>`:""}
+          ${c.email?`<span>${ic("mail")} ${escaparHTML(c.email)}</span>`:""}
+          ${c.endereco?`<span>${ic("map-pin")} ${escaparHTML(c.endereco)}</span>`:""}
         </div>
       </div>
       <div class="acoes-admin" style="flex-shrink:0">
+        <button class="btn-sm btn-sm-edit" onclick="abrirPerfilCliente(${c.id})">${ic("user")} Perfil / histórico</button>
         <button class="btn-sm btn-sm-edit" onclick="editarCliente(${c.id})">${ic("edit")} Editar</button>
         <button class="btn-sm btn-sm-del"  onclick="excluirCliente(${c.id})">${ic("trash")}</button>
       </div>
     </div>`).join("");
 }
 
-function popularSelectClientes() {
-  const sel=document.getElementById("clienteSelecionado"); if (!sel) return;
-  const atual=sel.value;
-  sel.innerHTML=`<option value="">— Venda sem cliente —</option>`+clientes.map(c=>`<option value="${c.id}">${c.nome||"Cliente #"+c.id}${c.telefone?" · "+c.telefone:""}</option>`).join("");
-  if (atual) sel.value=atual;
+function compraDoCliente(registro, cliente) {
+  const nomeCliente = normalizarTexto(cliente.nome);
+  const nomeCompra = normalizarTexto(registro.clienteNome || registro.cliente_nome);
+  const telefoneCliente = normalizarTelefoneCliente(cliente.telefone);
+  const telefoneCompra = normalizarTelefoneCliente(registro.clienteTelefone || registro.cliente_telefone);
+  const mesmoId = registro.origem !== "art" && cliente.firestoreId && String(registro.clienteId) === String(cliente.firestoreId);
+  if (mesmoId) return true;
+  if (telefoneCliente && telefoneCompra) {
+    return telefoneCliente === telefoneCompra && (!nomeCliente || !nomeCompra || nomeCliente === nomeCompra);
+  }
+  return !telefoneCompra && nomeCliente && nomeCompra === nomeCliente && !telefoneCliente;
+}
+
+function dataCompraTimestamp(compra) {
+  if (compra.created_at || compra.createdAt) {
+    const timestamp = new Date(compra.created_at || compra.createdAt).getTime();
+    if (!Number.isNaN(timestamp)) return timestamp;
+  }
+  const data = parseDDMMYYYY(compra.data);
+  if (!data) return 0;
+  const [hora = 0, minuto = 0] = String(compra.hora || "").split(":").map(Number);
+  data.setHours(hora || 0, minuto || 0);
+  return data.getTime();
+}
+
+function imagemDoItemCompra(item) {
+  if (!item || typeof item !== "object") return "";
+  const produto = produtos.find(p => (item.skuId && p.skuId === item.skuId) || p.nome === item.nome);
+  const url = item.fotoUrl || item.foto_url || produto?.fotoUrl || "";
+  return /^(https?:\/\/|data:image\/)/i.test(url) ? url : "";
+}
+
+function abrirPerfilCliente(id) {
+  const cliente = clientes.find(c => String(c.id) === String(id));
+  if (!cliente) return;
+  const conteudo = document.getElementById("perfilClienteConteudo");
+  if (!conteudo) return;
+
+  const compras = [
+    ...historico.filter(v => !v.cancelada).map(v => ({ ...v, origem: "vendas" })),
+    ...pedidosRT.filter(p => !p.cancelada && p.status !== "cancelado").map(p => ({ ...p, origem: "art" })),
+  ].filter(registro => compraDoCliente(registro, cliente))
+    .sort((a, b) => dataCompraTimestamp(b) - dataCompraTimestamp(a));
+  const totalComprado = compras.reduce((soma, compra) => soma + (Number(compra.total) || 0), 0);
+  const itensHtml = compra => (compra.itens || []).map(item => {
+    const nome = typeof item === "string" ? item : item.nome || "Produto";
+    const quantidade = typeof item === "string" ? 1 : Number(item.quantidade) || 1;
+    const preco = typeof item === "string" ? 0 : Number(item.preco) || 0;
+    const imagem = imagemDoItemCompra(item);
+    return `<div class="perfil-produto">
+      <div class="perfil-produto-foto">${imagem ? `<img src="${escaparHTML(imagem)}" alt="${escaparHTML(nome)}" loading="lazy">` : `<span>${ic("package")}</span>`}</div>
+      <div class="perfil-produto-detalhe"><strong>${escaparHTML(nome)}</strong><span>${quantidade} un. · R$ ${fmt(preco * quantidade)}</span></div>
+    </div>`;
+  }).join("");
+
+  conteudo.innerHTML = `
+    <div class="perfil-cliente-identidade">
+      <div class="cliente-avatar">${escaparHTML((cliente.nome || "?")[0].toUpperCase())}</div>
+      <div><h4>${cliente.nome ? escaparHTML(cliente.nome) : "Cliente sem nome"}</h4><p>${cliente.telefone ? escaparHTML(cliente.telefone) : "Sem telefone cadastrado"}</p></div>
+    </div>
+    <div class="perfil-cliente-resumo"><strong>${compras.length} ${compras.length === 1 ? "compra" : "compras"}</strong><span>Total: R$ ${fmt(totalComprado)}</span></div>
+    ${compras.length ? `<div class="perfil-compras-lista">${compras.map(compra => `
+      <article class="perfil-compra">
+        <div class="perfil-compra-cabecalho"><div><strong>${escaparHTML(compra.data || new Date(compra.created_at).toLocaleDateString("pt-BR"))}${compra.hora ? ` · ${escaparHTML(compra.hora)}` : ""}</strong><span class="tag ${compra.origem === "art" ? "tag-origem-art" : "tag-origem-vendas"}">${compra.origem === "art" ? "Atendimento RT" : "Venda"}</span></div><strong class="perfil-compra-total">R$ ${fmt(Number(compra.total) || 0)}</strong></div>
+        <div class="perfil-compra-itens">${itensHtml(compra) || `<span class="perfil-sem-itens">Sem itens registrados.</span>`}</div>
+      </article>`).join("")}</div>` : `<div class="empty-state"><span>${ic("clipboard")}</span>Nenhuma compra registrada para este cliente ainda.</div>`}
+  `;
+  document.getElementById("modalPerfilCliente")?.classList.remove("hidden");
+}
+function fecharPerfilCliente() {
+  document.getElementById("modalPerfilCliente")?.classList.add("hidden");
+}
+
+function atualizarSugestoesClientesVenda() {
+  if (!document.getElementById("buscaClienteVenda")) return;
+  filtrarClientesVenda();
+}
+function filtrarClientesVenda() {
+  const campo=document.getElementById("buscaClienteVenda");
+  const sugestoes=document.getElementById("sugestoesClientesVenda");
+  if (!campo || !sugestoes) return;
+  const termo=campo.value||"";
+  const busca=normalizarTexto(termo);
+  const buscaTelefone=/^[\d\s()+.-]+$/.test(termo) ? normalizarTelefoneCliente(termo) : "";
+  if (clienteVendaSelecionadoId !== null) {
+    const clienteSelecionado=clientes.find(c=>String(c.id)===String(clienteVendaSelecionadoId));
+    if (clienteSelecionado && termo === (clienteSelecionado.nome || clienteSelecionado.telefone || "")) {
+      sugestoes.classList.add("hidden");
+      return;
+    }
+    clienteVendaSelecionadoId=null;
+  }
+  if (!busca) {
+    sugestoes.innerHTML="";
+    sugestoes.classList.add("hidden");
+    return;
+  }
+  const filtrados=clientes.filter(c=>{
+    return normalizarTexto(c.nome).includes(busca) ||
+      (buscaTelefone && normalizarTelefoneCliente(c.telefone).includes(buscaTelefone));
+  });
+  if (!filtrados.length) {
+    sugestoes.innerHTML=`<div class="venda-cliente-sem-sugestoes">Nenhum cliente encontrado.</div>`;
+  } else {
+    sugestoes.innerHTML=filtrados.slice(0,8).map(c=>`
+      <button type="button" class="venda-cliente-sugestao" role="option" onclick="selecionarClienteVenda(${c.id})">
+        <span>${escaparHTML(c.nome||"Cliente #"+c.id)}</span>
+        ${c.telefone?`<small>${escaparHTML(c.telefone)}</small>`:""}
+      </button>`).join("");
+  }
+  sugestoes.classList.remove("hidden");
+}
+function selecionarClienteVenda(id) {
+  const cliente=clientes.find(c=>String(c.id)===String(id));
+  if (!cliente) return;
+  clienteVendaSelecionadoId=cliente.id;
+  const campo=document.getElementById("buscaClienteVenda");
+  if (campo) campo.value=cliente.nome || cliente.telefone || "";
+  document.getElementById("sugestoesClientesVenda")?.classList.add("hidden");
 }
 
 /* ─────────────────────────────────────────
@@ -1115,16 +1253,17 @@ async function finalizarPedido() {
     const total=calcularTotalFinal(), soma=pagamentosSelecionados.slice(0,-1).reduce((a,t)=>a+(parseFloat(splitPagamento[t])||0),0);
     if (soma>total+.005){mostrarToast("A soma dos pagamentos ultrapassa o total.","erro");return;}
   }
-  const itens=itensIds.map(id=>{const p=produtos.find(p=>p.id===Number(id));return{nome:p.nome,skuId:p.skuId,quantidade:carrinho[id],preco:p.preco};});
+  const itens=itensIds.map(id=>{const p=produtos.find(p=>p.id===Number(id));return{nome:p.nome,skuId:p.skuId,quantidade:carrinho[id],preco:p.preco,fotoUrl:p.fotoUrl||""};});
   const semEstoque=itensIds.find(id=>{const p=produtos.find(p=>p.id===Number(id));return (p.estoque||0)<carrinho[id];});
   if (semEstoque){const p=produtos.find(p=>p.id===Number(semEstoque));mostrarToast(`Estoque insuficiente para ${p.nome}.` ,"erro");return;}
   itens.forEach(item=>{const p=produtos.find(prod=>prod.skuId===item.skuId);item.custo=p?.custo||0;});
   const sub=calcularSubtotal(), desc=calcularDesconto(sub), total=Math.max(0,sub-desc);
   const pagamentos=getSplitFinal(pagamentosSelecionados,splitPagamento,total);
-  const clienteIdVal=document.getElementById("clienteSelecionado")?.value||"";
-  const clienteObj=clienteIdVal?clientes.find(c=>c.id===Number(clienteIdVal)):null;
+  const clienteObj=clienteVendaSelecionadoId!==null
+    ? clientes.find(c=>String(c.id)===String(clienteVendaSelecionadoId))
+    : null;
   const clienteNome=clienteObj?.nome||"";
-  const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteObj?.firestoreId||null,clienteNome,clienteEndereco:clienteObj?.endereco||""};
+  const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteObj?.firestoreId||null,clienteNome,clienteTelefone:clienteObj?.telefone||"",clienteEndereco:clienteObj?.endereco||""};
   const fid = await fbSalvarVenda(venda);
   if (fid) { venda.firestoreId=fid; historico.push(venda); }
   await Promise.all(itensIds.map(async id=>{const p=produtos.find(prod=>prod.id===Number(id));p.estoque=Math.max(0,(p.estoque||0)-carrinho[id]);await fbSalvarProduto(p);}));
@@ -1140,7 +1279,10 @@ async function finalizarPedido() {
   document.getElementById("desc-tipo-pct")?.classList.add("ativo");
   document.getElementById("descontoSufixo").textContent="%";
   document.getElementById("carrinhoCard").style.display="none";
-  if (document.getElementById("clienteSelecionado")) document.getElementById("clienteSelecionado").value="";
+  clienteVendaSelecionadoId=null;
+  if (document.getElementById("buscaClienteVenda")) document.getElementById("buscaClienteVenda").value="";
+  document.getElementById("sugestoesClientesVenda")?.classList.add("hidden");
+  atualizarSugestoesClientesVenda();
   renderProdutos();
   mostrarComprovante(venda);
 }
@@ -1264,6 +1406,38 @@ function normalizarPedidoRT(p) {
     origem: "art",
     cancelada: p.status === "cancelado",
   };
+}
+
+async function sincronizarClientePedidoRT(pedido) {
+  if (!normalizarTelefoneCliente(pedido.cliente_telefone)) return;
+  const { data, error } = await supabase.from("clientes").select("*").eq("user_id", usuarioAtual.id);
+  if (error) {
+    console.error("Erro ao sincronizar cliente do pedido RT:", error);
+    mostrarToast("O pedido chegou, mas não foi possível atualizar a lista de clientes.", "erro");
+    return;
+  }
+  const telefonePedido = normalizarTelefoneCliente(pedido.cliente_telefone);
+  const nomePedido = normalizarTexto(pedido.cliente_nome || "Cliente");
+  const registro = (data || []).find(cliente =>
+    normalizarTelefoneCliente(cliente.telefone) === telefonePedido &&
+    normalizarTexto(cliente.nome || "Cliente") === nomePedido
+  );
+  if (!registro) return;
+
+  const cliente = {
+    firestoreId: registro.id,
+    id: registro.internal_id || proximoIdCliente(),
+    nome: registro.nome || "",
+    telefone: registro.telefone || "",
+    cpf: registro.cpf || "",
+    email: registro.email || "",
+    endereco: registro.endereco || "",
+  };
+  const indice = clientes.findIndex(existente => existente.firestoreId === cliente.firestoreId);
+  if (indice === -1) clientes.push(cliente);
+  else clientes[indice] = { ...clientes[indice], ...cliente };
+  atualizarSugestoesClientesVenda();
+  if (document.getElementById("page-clientes")?.classList.contains("active")) renderClientes();
 }
 
 function todosRegistros() { return [...historico, ...pedidosRT]; }
@@ -1398,7 +1572,7 @@ function _carregarFormEditarVenda() {
   if (sel){sel.innerHTML=`<option value="">+ Adicionar produto ao pedido...</option>`+produtos.map(p=>`<option value="${p.id}">#${String(p.skuId).padStart(4,"0")} ${p.nome} – R$ ${fmt(p.preco)}</option>`).join("");sel.onchange=()=>{if(sel.value){_adicionarItemEditar(Number(sel.value));sel.value="";}};} 
   renderEditarItens(); renderEditSplit(); atualizarEditarTotal();
 }
-function _adicionarItemEditar(prodId) { const p=produtos.find(p=>p.id===prodId); if (!p) return; const ex=editarItens.find(i=>i.nome===p.nome); if (ex){ex.quantidade++;} else editarItens.push({nome:p.nome,skuId:p.skuId,quantidade:1,preco:p.preco}); renderEditarItens(); atualizarEditarTotal(); }
+function _adicionarItemEditar(prodId) { const p=produtos.find(p=>p.id===prodId); if (!p) return; const ex=editarItens.find(i=>i.nome===p.nome); if (ex){ex.quantidade++;} else editarItens.push({nome:p.nome,skuId:p.skuId,quantidade:1,preco:p.preco,fotoUrl:p.fotoUrl||""}); renderEditarItens(); atualizarEditarTotal(); }
 function renderEditarItens() {
   const lista=document.getElementById("editarItensList"); if (!lista) return;
   if (!editarItens.length){lista.innerHTML=`<p style="color:var(--text3);font-size:13px;padding:8px 0">Nenhum item. Adicione produtos acima.</p>`;return;}
@@ -1682,6 +1856,7 @@ async function sincronizarPedidosRTPolling() {
     if (idsPedidosRTConhecidos.has(id)) return;
     idsPedidosRTConhecidos.add(id);
     pedidosRT.push(normalizarPedidoRT(pedido));
+    sincronizarClientePedidoRT(pedido);
     if (!feed) return;
     const vazio = feed.querySelector(".catalogo-feed-vazio-msg");
     if (vazio) feed.innerHTML = "";
@@ -1850,6 +2025,7 @@ function subscribeRealtimeAtendimento() {
       if (idsPedidosRTConhecidos.has(String(payload.new.id))) return;
       idsPedidosRTConhecidos.add(String(payload.new.id));
       pedidosRT.push(normalizarPedidoRT(payload.new));
+      sincronizarClientePedidoRT(payload.new);
       mostrarToast("Novo pedido recebido!","notif");
       mostrarNotificacaoPedido(payload.new);
       const feed = document.getElementById("feedPedidosRT");
@@ -2086,7 +2262,7 @@ function alterarQtdCatalogo(id, delta) {
   const nova = Math.min(estoque, Math.max(0, atual+delta));
   if (delta > 0 && nova === atual && estoque > 0) { mostrarToast("Quantidade maior que o estoque disponivel.", "erro"); return; }
   if (nova===0) delete carrinhoCatalogo[id];
-  else carrinhoCatalogo[id] = { nome:p.nome, preco:p.preco, quantidade:nova };
+  else carrinhoCatalogo[id] = { nome:p.nome, preco:p.preco, quantidade:nova, fotoUrl:p.foto_url||"" };
   const badge = document.getElementById(`catQtd-${id}`); if (badge) badge.textContent = nova;
   renderCarrinhoCatalogo();
 }
@@ -2180,7 +2356,7 @@ async function finalizarPedidoCatalogo() {
     p_cliente_nome: nome,
     p_cliente_telefone: telefone,
     p_cliente_endereco: endereco,
-    p_itens: itens.map(i=>({nome:i.nome,quantidade:i.quantidade,preco:i.preco})),
+    p_itens: itens.map(i=>({nome:i.nome,quantidade:i.quantidade,preco:i.preco,fotoUrl:i.fotoUrl||""})),
     p_total: total,
     p_pagamento: pagamentosCatalogo.join("+"),
     p_pagamentos: pagamentosFinal,
@@ -2216,6 +2392,7 @@ Object.assign(window, {
   atualizarNomeArquivo, removerFotoProduto, renderProdutosAdmin,
   // Clientes
   salvarCliente, editarCliente, abrirFormularioCliente, abrirNovoCliente, excluirCliente, cancelarEdicaoCliente, renderClientes,
+  abrirPerfilCliente, fecharPerfilCliente, filtrarClientesVenda, selecionarClienteVenda,
   // Estoque
   renderEstoque, editarProdutoDoEstoque,
   // Formatadores
