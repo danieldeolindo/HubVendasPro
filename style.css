@@ -110,6 +110,8 @@ a { color: var(--green-dark); cursor: pointer; text-decoration: underline; }
 .field-group.w160 { width: 160px; }
 .config-cupom-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .config-cupom-row input { padding: 10px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; color: var(--text); background: var(--input-bg); outline: none; }
+.frete-config-campo { flex: 1 1 180px; display: flex; flex-direction: column; gap: 6px; }
+.frete-config-campo span { color: var(--text2); font-size: 12px; font-weight: 700; }
 .config-cupom-percentual { display: flex; align-items: center; border: 1.5px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--input-bg); }
 .config-cupom-percentual input { width: 72px; border: none; border-radius: 0; }
 .config-cupom-percentual span { padding: 0 10px; color: var(--text3); font-weight: 700; }
@@ -309,6 +311,9 @@ a { color: var(--green-dark); cursor: pointer; text-decoration: underline; }
 .finalizar-bar { display: flex; justify-content: flex-end; align-items: center; gap: 16px; padding: 16px 0 8px; }
 .finalizar-resumo { font-size: 13px; color: var(--text3); }
 .finalizar-resumo strong { color: var(--text); }
+.frete-venda-opcao { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 700; color: var(--text2); cursor: pointer; }
+.frete-venda-opcao input { width: 17px; height: 17px; accent-color: var(--green); }
+.frete-venda-resumo { margin-top: 8px; color: var(--text3); font-size: 12px; }
 .venda-cliente-selecao { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
 .venda-cliente-busca { position: relative; width: 100%; min-width: 0; }
 .venda-novo-cliente { flex-shrink: 0; white-space: nowrap; }
@@ -382,6 +387,7 @@ input[type="file"] { display: none; }
 .venda-cliente { font-size: 12px; color: var(--text3); font-weight: 600; margin-bottom: 6px; }
 .venda-desconto-info { font-size: 12px; color: var(--text3); margin-bottom: 6px; }
 .venda-desconto-info span { color: var(--red); font-weight: 700; }
+.venda-frete-info { font-size: 12px; color: var(--text3); margin-bottom: 6px; }
 .venda-pagamento { margin-bottom: 10px; }
 .itens-historico { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .item-historico { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 13px; color: var(--text2); }
@@ -689,7 +695,12 @@ input[type="file"] { display: none; }
 .catalogo-split-resumo { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border2); color: var(--text2); font-size: 12px; line-height: 1.45; }
 .catalogo-split-resumo strong { color: var(--cat-cor); }
 .catalogo-split-resumo small { color: var(--text3); font-size: 11px; }
-.catalogo-total-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; padding: 10px 0; border-top: 1.5px solid var(--border2); margin-top: 8px; color: var(--cat-cor); }
+.catalogo-total-row { display: block; font-size: 16px; font-weight: 800; padding: 10px 0; border-top: 1.5px solid var(--border2); margin-top: 8px; color: var(--cat-cor); }
+.catalogo-total-row > div { width: 100%; }
+.catalogo-resumo-linha { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; color: var(--text2); font-size: 13px; font-weight: 500; }
+.catalogo-resumo-desconto { color: var(--red); }
+.catalogo-resumo-total { padding-top: 8px; margin-top: 5px; border-top: 1px solid var(--border2); color: var(--cat-cor); font-size: 16px; font-weight: 800; }
+.catalogo-frete-ajuda { display: block; margin-top: 3px; color: var(--text3); font-size: 11px; font-weight: 500; }
 .catalogo-total-original { color: var(--text3); font-size: 11px; font-weight: 600; text-decoration: line-through; }
 .catalogo-cupom-box { margin-top: 12px; padding: 10px 0 2px; border-top: 1px solid var(--border2); }
 .catalogo-cupom-box label { display: block; margin-bottom: 6px; color: var(--text2); font-size: 12px; font-weight: 700; }

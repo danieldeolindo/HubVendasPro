@@ -196,6 +196,15 @@
             <p class="desconto-preview" id="descontoPreview"></p>
           </div>
 
+          <div class="section-card" id="freteVendaCard" style="display:none">
+            <p class="section-label">Frete nesta venda</p>
+            <label class="frete-venda-opcao">
+              <input type="checkbox" id="freteVendaAtivo" onchange="alternarFreteVenda(this.checked)">
+              <span>Incluir frete nesta venda</span>
+            </label>
+            <p class="frete-venda-resumo" id="freteVendaResumo"></p>
+          </div>
+
           <div class="section-card">
             <p class="section-label">Forma de pagamento</p>
             <div class="pagamento-opcoes">
@@ -500,6 +509,15 @@
           </div>
           <span class="config-cupom-ajuda">O cliente informa essa palavra no link do catálogo para receber o desconto.</span>
         </div>
+        <div class="field-group" style="margin-bottom:14px">
+          <label>Frete para pedidos do catálogo</label>
+          <div class="config-cupom-row">
+            <div class="frete-config-campo"><span>Valor mínimo para frete grátis (R$)</span><input type="number" id="freteGratisMinimo" min="0" step="0.01" placeholder="Ex.: 100,00"></div>
+            <div class="frete-config-campo"><span>Valor do frete (R$)</span><input type="number" id="valorFreteLoja" min="0" step="0.01" placeholder="Ex.: 10,00"></div>
+            <button class="btn-primary" onclick="salvarFreteLoja()">Salvar frete</button>
+          </div>
+          <span class="config-cupom-ajuda">No catálogo, o frete é calculado automaticamente. Nas vendas manuais, você decide se inclui o frete.</span>
+        </div>
         <div class="loja-config-grid">
           <div>
             <p class="section-label" style="margin-bottom:10px">Cor do nome</p>
@@ -576,8 +594,9 @@
       <p class="section-label"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h2l2.6 12.4a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L21 7H6"/></svg> Seu pedido</p>
       <div id="catalogoCarrinhoItens" class="carrinho-itens"></div>
       <div class="catalogo-total-row">
-        <span>Total</span>
-        <span>R$ <span id="catalogoTotalValor">0,00</span></span>
+        <div id="catalogoResumoValores">
+          <div class="catalogo-resumo-linha catalogo-resumo-total"><span>Total</span><span>R$ <span id="catalogoTotalValor">0,00</span></span></div>
+        </div>
       </div>
       <div id="catalogoCarrinhoMinimizado" class="catalogo-carrinho-minimizado-resumo" aria-hidden="true"></div>
 

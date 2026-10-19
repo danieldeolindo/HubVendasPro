@@ -22,6 +22,7 @@ let usuarioAtual           = null;  // objeto Supabase User
 let editandoId             = null;
 let editandoClienteId      = null;
 let clienteVendaSelecionadoId = null;
+let freteVendaAtivo       = false;
 let pagamentosSelecionados = ["dinheiro"];
 let splitPagamento         = {};
 let tipoDesconto           = "pct";
@@ -34,6 +35,7 @@ let vendaComprovanteAtual  = null;
 
 let editarVendaIdx     = null;
 let editarItens        = [];
+let editarFrete        = 0;
 let editarPagamentos   = ["dinheiro"];
 let editarSplit        = {};
 let editarTipoDesconto = "pct";
@@ -215,6 +217,7 @@ async function carregarDadosUsuario() {
       itens:        h.itens || [],
       subtotal:     h.subtotal,
       desconto:     h.desconto,
+      frete:        Number(h.frete) || 0,
       total:        h.total,
       pagamento:    h.pagamento,
       pagamentos:   h.pagamentos || {},
@@ -239,7 +242,7 @@ async function carregarDadosUsuario() {
 
     const cfgData = cfgRes.data;
     if (cfgData) {
-      lojaConfigAtual = cfgData.loja_config || {nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:"",cupom_codigo:"",cupom_percentual:0};
+      lojaConfigAtual = {...lojaConfigAtual,...(cfgData.loja_config || {})};
       lojaConfigAtual._avatarUrl = cfgData.avatar_url || "";
       if (cfgData.tema) document.documentElement.setAttribute("data-theme", cfgData.tema);
       if (cfgData.menu_ordem) _menuOrdemLocal = cfgData.menu_ordem;
@@ -304,6 +307,7 @@ async function fbSalvarVenda(venda) {
       subtotal:     venda.subtotal,
       desconto:     venda.desconto,
       total:        venda.total,
+      frete:        Number(venda.frete) || 0,
       pagamento:    venda.pagamento,
       pagamentos:   venda.pagamentos || {},
       cliente_id:   venda.clienteId || null,
@@ -330,6 +334,7 @@ async function fbAtualizarVenda(firestoreId, dados) {
     if (dados.itens      !== undefined) payload.itens        = dados.itens;
     if (dados.subtotal   !== undefined) payload.subtotal     = dados.subtotal;
     if (dados.desconto   !== undefined) payload.desconto     = dados.desconto;
+    if (dados.frete      !== undefined) payload.frete        = dados.frete;
     if (dados.total      !== undefined) payload.total        = dados.total;
     if (dados.pagamento  !== undefined) payload.pagamento    = dados.pagamento;
     if (dados.pagamentos !== undefined) payload.pagamentos   = dados.pagamentos;
@@ -382,7 +387,8 @@ async function fbSalvarConfig(dados) {
     if (dados.catalogoProdutos !== undefined) payload.catalogo_produtos = dados.catalogoProdutos;
     const { error } = await supabase.from("config").upsert(payload, { onConflict: "user_id" });
     if (error) throw error;
-  } catch(e) { console.error("Erro ao salvar config:", e); }
+    return true;
+  } catch(e) { console.error("Erro ao salvar config:", e); return false; }
 }
 
 /* ─────────────────────────────────────────
@@ -425,7 +431,7 @@ async function removerImagem(k) {
 ───────────────────────────────────────── */
 const LOJA_CORES=[{hex:"#00bf63",label:"Verde"},{hex:"#e53935",label:"Vermelho"},{hex:"#2563eb",label:"Azul"},{hex:"#f59e0b",label:"Amarelo"},{hex:"#8b5cf6",label:"Roxo"},{hex:"#ec4899",label:"Rosa"},{hex:"#0d9488",label:"Teal"},{hex:"#ea580c",label:"Laranja"},{hex:"#0d0d0d",label:"Preto"}];
 const LOJA_FONTES=[{id:"jakarta",label:"Plus Jakarta Sans",css:"'Plus Jakarta Sans', sans-serif"},{id:"mono",label:"DM Mono",css:"'DM Mono', monospace"},{id:"serif",label:"Georgia (Serif)",css:"Georgia, serif"},{id:"rounded",label:"Verdana",css:"Verdana, sans-serif"}];
-let lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:"",cupom_codigo:"",cupom_percentual:0};
+let lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:"",cupom_codigo:"",cupom_percentual:0,frete_minimo:0,valor_frete:0};
 let _menuOrdemLocal = null;
 let catalogoSelecionado = [];   // array de firestoreId (uuid) dos produtos no catálogo público
 let canalPedidosRT = null;      // referência do canal Realtime (Atendimento RT)
@@ -447,6 +453,54 @@ function salvarCupomLoja() {
   const codigoInput = document.getElementById("cupomCodigoLoja"); if (codigoInput) codigoInput.value = codigo;
   const percentualInput = document.getElementById("cupomPercentualLoja"); if (percentualInput) percentualInput.value = codigo ? percentual : "";
   mostrarToast(codigo ? "Cupom salvo!" : "Cupom removido.");
+}
+async function salvarFreteLoja() {
+  const minimoInput=document.getElementById("freteGratisMinimo");
+  const valorInput=document.getElementById("valorFreteLoja");
+  const minimo=minimoInput?.value.trim()===""?0:Number(minimoInput?.value);
+  const valor=valorInput?.value.trim()===""?0:Number(valorInput?.value);
+  if (!Number.isFinite(minimo)||!Number.isFinite(valor)||minimo<0||valor<0) {
+    mostrarToast("Informe valores de frete válidos.","erro");
+    return;
+  }
+  if ((minimo===0)!==(valor===0)) {
+    mostrarToast("Preencha o mínimo e o frete, ou deixe ambos em zero para desativar.","erro");
+    return;
+  }
+  const configuracaoAnterior=lojaConfigAtual;
+  lojaConfigAtual={...lojaConfigAtual,frete_minimo:minimo,valor_frete:valor};
+  if (!await fbSalvarConfig({lojaConfig:lojaConfigAtual})) {
+    lojaConfigAtual=configuracaoAnterior;
+    mostrarToast("Não foi possível salvar a configuração de frete.","erro");
+    return;
+  }
+  atualizarFreteVendaUI();
+  mostrarToast(minimo>0?"Configuração de frete salva!":"Frete desativado.");
+}
+function freteConfigurado() {
+  return Number(lojaConfigAtual.frete_minimo)>0 && Number(lojaConfigAtual.valor_frete)>0;
+}
+function calcularFrete(subtotalLiquido) {
+  if (!freteConfigurado()) return 0;
+  return subtotalLiquido >= Number(lojaConfigAtual.frete_minimo) ? 0 : Number(lojaConfigAtual.valor_frete);
+}
+function freteAtualVenda(subtotal,desconto) {
+  return freteVendaAtivo && subtotal>0 ? calcularFrete(Math.max(0,subtotal-desconto)) : 0;
+}
+function alternarFreteVenda(ativo) {
+  freteVendaAtivo=Boolean(ativo);
+  atualizarTotal();
+}
+function atualizarFreteVendaUI() {
+  const card=document.getElementById("freteVendaCard");
+  if (!card) return;
+  card.style.display=freteConfigurado()?"block":"none";
+  if (!freteConfigurado()) {
+    freteVendaAtivo=false;
+    const checkbox=document.getElementById("freteVendaAtivo");
+    if (checkbox) checkbox.checked=false;
+  }
+  atualizarTotal();
 }
 function selecionarCorLoja(hex,custom=false) { lojaConfigAtual.cor=hex; document.querySelectorAll(".color-swatch").forEach(s=>s.classList.toggle("ativo",s.dataset.cor===hex)); if (!custom) { const p=document.getElementById("lojaCorCustom"); if (p) p.value=hex; } salvarLojaConfig(); aplicarNomeLoja(); atualizarPreviewLoja(); }
 function selecionarFonteLoja(id) { lojaConfigAtual.fonte=id; document.querySelectorAll(".btn-font-opcao").forEach(b=>b.classList.toggle("ativo",b.dataset.fonte===id)); salvarLojaConfig(); aplicarNomeLoja(); atualizarPreviewLoja(); }
@@ -580,7 +634,7 @@ function navegarPara(pagina) {
   renderNavs(pagina);
   if (pagina==="dashboard")     renderDashboard();
   if (pagina==="estoque")       renderEstoque();
-  if (pagina==="vendas")        { renderProdutos(); atualizarSugestoesClientesVenda(); }
+  if (pagina==="vendas")        { atualizarFreteVendaUI(); renderProdutos(); atualizarSugestoesClientesVenda(); }
   if (pagina==="admin")         { renderProdutosAdmin(); atualizarSugestoesCategorias(); }
   if (pagina==="clientes")      renderClientes();
   if (pagina==="historico")     renderHistorico();
@@ -645,7 +699,7 @@ function limparSessao() {
   usuarioAtual = null;
   produtos=[]; historico=[]; pedidosRT=[]; clientes=[]; carrinho={};
   clienteVendaSelecionadoId=null;
-  lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:""};
+  lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:"",cupom_codigo:"",cupom_percentual:0,frete_minimo:0,valor_frete:0};
   _menuOrdemLocal=null;
   document.documentElement.setAttribute("data-theme","light");
   document.getElementById("appShell").classList.add("hidden");
@@ -729,7 +783,7 @@ function entrarNoPainel(user) {
   renderBotoesPagamento(); renderNavs("vendas");
   document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
   document.getElementById("page-vendas")?.classList.add("active");
-  renderProdutos(); atualizarSugestoesClientesVenda();
+  atualizarFreteVendaUI(); renderProdutos(); atualizarSugestoesClientesVenda();
 }
 
 /* ─────────────────────────────────────────
@@ -924,6 +978,7 @@ function abrirPerfilCliente(id) {
     ${compras.length ? `<div class="perfil-compras-lista">${compras.map(compra => `
       <article class="perfil-compra">
         <div class="perfil-compra-cabecalho"><div><strong>${escaparHTML(compra.data || new Date(compra.created_at).toLocaleDateString("pt-BR"))}${compra.hora ? ` · ${escaparHTML(compra.hora)}` : ""}</strong><span class="tag ${compra.origem === "art" ? "tag-origem-art" : "tag-origem-vendas"}">${compra.origem === "art" ? "Atendimento RT" : "Venda"}</span></div><strong class="perfil-compra-total">R$ ${fmt(Number(compra.total) || 0)}</strong></div>
+        ${Number(compra.frete)>0?`<p class="venda-frete-info">Frete: R$ ${fmt(Number(compra.frete))}</p>`:""}
         <div class="perfil-compra-itens">${itensHtml(compra) || `<span class="perfil-sem-itens">Sem itens registrados.</span>`}</div>
       </article>`).join("")}</div>` : `<div class="empty-state"><span>${ic("clipboard")}</span>Nenhuma compra registrada para este cliente ainda.</div>`}
   `;
@@ -992,13 +1047,25 @@ function calcularDesconto(sub) {
 function calcularSubtotal() {
   let t=0; for (const id in carrinho) { const p=produtos.find(p=>p.id===Number(id)); if (p) t+=p.preco*carrinho[id]; } return t;
 }
-function calcularTotalFinal() { const s=calcularSubtotal(), d=calcularDesconto(s); return Math.max(0,s-d); }
+function calcularTotalFinal() {
+  const subtotal=calcularSubtotal(), desconto=calcularDesconto(subtotal);
+  return Math.max(0,subtotal-desconto)+freteAtualVenda(subtotal,desconto);
+}
 
 function atualizarTotal() {
-  const sub=calcularSubtotal(), desc=calcularDesconto(sub), total=Math.max(0,sub-desc);
+  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), total=Math.max(0,sub-desc)+frete;
   const el=document.getElementById("total"); if (el) el.innerText=fmt(total);
   const prev=document.getElementById("descontoPreview");
-  if (prev) prev.textContent=desc>0?`Subtotal R$ ${fmt(sub)}  –  Desconto R$ ${fmt(desc)}  =  R$ ${fmt(total)}`:"";
+  if (prev) prev.textContent=desc>0?`Subtotal R$ ${fmt(sub)}  –  Desconto R$ ${fmt(desc)}${frete>0?`  +  Frete R$ ${fmt(frete)}`:""}  =  R$ ${fmt(total)}`:frete>0?`Frete R$ ${fmt(frete)} incluído no total.`:"";
+  const freteResumo=document.getElementById("freteVendaResumo");
+  if (freteResumo && freteVendaAtivo) {
+    const subtotalLiquido=Math.max(0,sub-desc);
+    freteResumo.textContent=sub<=0
+      ?"Adicione produtos para calcular o frete."
+      :frete===0
+      ?`Frete grátis${subtotalLiquido>=Number(lojaConfigAtual.frete_minimo)?` (mínimo de R$ ${fmt(Number(lojaConfigAtual.frete_minimo))} atingido)`:""}.`
+      :`Frete de R$ ${fmt(frete)} incluído no total.`;
+  } else if (freteResumo) freteResumo.textContent="";
   const resumo=document.getElementById("finalizarResumo");
   if (resumo) { const q=Object.values(carrinho).reduce((a,b)=>a+b,0); resumo.innerHTML=q>0?`<strong>${q}</strong> ite${q>1?"ns":"m"} · Total: <strong>R$ ${fmt(total)}</strong>`:""; }
   renderCarrinho();
@@ -1011,7 +1078,7 @@ function renderCarrinho() {
   const itensCarrinho=Object.entries(carrinho).filter(([,q])=>q>0);
   if (itensCarrinho.length===0) { card.style.display="none"; return; }
   card.style.display="block";
-  const sub=calcularSubtotal(), desc=calcularDesconto(sub), tot=Math.max(0,sub-desc);
+  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), tot=Math.max(0,sub-desc)+frete;
   itensEl.innerHTML=itensCarrinho.map(([id,qtd])=>{
     const p=produtos.find(p=>p.id===Number(id)); if (!p) return "";
     return `<div class="carrinho-item">
@@ -1028,6 +1095,7 @@ function renderCarrinho() {
   footerEl.innerHTML=`
     <div class="carrinho-subtotal-row"><span>Subtotal</span><span class="mono">R$ ${fmt(sub)}</span></div>
     ${desc>0?`<div class="carrinho-subtotal-row desc"><span>Desconto</span><span class="mono red">− R$ ${fmt(desc)}</span></div>`:""}
+    ${frete>0?`<div class="carrinho-subtotal-row"><span>Frete</span><span class="mono">R$ ${fmt(frete)}</span></div>`:""}
     <div class="carrinho-subtotal-row total-row"><span>Total</span><span class="mono green">R$ ${fmt(tot)}</span></div>`;
 }
 
@@ -1257,13 +1325,13 @@ async function finalizarPedido() {
   const semEstoque=itensIds.find(id=>{const p=produtos.find(p=>p.id===Number(id));return (p.estoque||0)<carrinho[id];});
   if (semEstoque){const p=produtos.find(p=>p.id===Number(semEstoque));mostrarToast(`Estoque insuficiente para ${p.nome}.` ,"erro");return;}
   itens.forEach(item=>{const p=produtos.find(prod=>prod.skuId===item.skuId);item.custo=p?.custo||0;});
-  const sub=calcularSubtotal(), desc=calcularDesconto(sub), total=Math.max(0,sub-desc);
+  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), total=Math.max(0,sub-desc)+frete;
   const pagamentos=getSplitFinal(pagamentosSelecionados,splitPagamento,total);
   const clienteObj=clienteVendaSelecionadoId!==null
     ? clientes.find(c=>String(c.id)===String(clienteVendaSelecionadoId))
     : null;
   const clienteNome=clienteObj?.nome||"";
-  const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteObj?.firestoreId||null,clienteNome,clienteTelefone:clienteObj?.telefone||"",clienteEndereco:clienteObj?.endereco||""};
+  const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,frete,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteObj?.firestoreId||null,clienteNome,clienteTelefone:clienteObj?.telefone||"",clienteEndereco:clienteObj?.endereco||""};
   const fid = await fbSalvarVenda(venda);
   if (fid) { venda.firestoreId=fid; historico.push(venda); }
   await Promise.all(itensIds.map(async id=>{const p=produtos.find(prod=>prod.id===Number(id));p.estoque=Math.max(0,(p.estoque||0)-carrinho[id]);await fbSalvarProduto(p);}));
@@ -1272,6 +1340,11 @@ async function finalizarPedido() {
   carrinho={}; pagamentosSelecionados=["dinheiro"]; splitPagamento={}; tipoDesconto="pct";
   ["descontoInput"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});
   document.getElementById("descontoPreview").textContent="";
+  freteVendaAtivo=false;
+  const freteCheckbox=document.getElementById("freteVendaAtivo");
+  if (freteCheckbox) freteCheckbox.checked=false;
+  const freteResumo=document.getElementById("freteVendaResumo");
+  if (freteResumo) freteResumo.textContent="";
   document.getElementById("total").innerText="0,00";
   renderBotoesPagamento();
   const sp=document.getElementById("pagamentoSplit");if(sp){sp.classList.add("hidden");sp.innerHTML="";}
@@ -1316,6 +1389,7 @@ function montarHTMLComprovante(venda) {
     <div class="cupom-totais">
       <div class="cupom-linha"><span>Subtotal</span><span>R$ ${fmt(venda.subtotal||venda.total)}</span></div>
       ${venda.desconto>0?`<div class="cupom-linha desc"><span>Desconto</span><span>− R$ ${fmt(venda.desconto)}</span></div>`:""}
+      ${Number(venda.frete)>0?`<div class="cupom-linha"><span>Frete</span><span>R$ ${fmt(venda.frete)}</span></div>`:""}
       <div class="cupom-linha total"><span>TOTAL</span><span>R$ ${fmt(venda.total)}</span></div>
     </div>
     <div class="cupom-divider">- - - - - - - - - - - - - - - - - - - - - -</div>
@@ -1337,7 +1411,7 @@ function criarPDFComprovante() {
   const {jsPDF}=window.jspdf;
   const v=vendaComprovanteAtual, loja=lojaConfigAtual.nome||"HubVendasPro";
   const linhasEstimadas=v.itens.reduce((total,item)=>total+Math.max(1,Math.ceil(String(typeof item==="string"?item:item.nome||"").length/28)),0);
-  const doc=new jsPDF({unit:"mm",format:[80,Math.max(200,110+linhasEstimadas*5)]});
+  const doc=new jsPDF({unit:"mm",format:[80,Math.max(200,110+linhasEstimadas*5+(Number(v.frete)>0?5:0))]});
   let y=10; const margem=4, largura=72, colunaQtd=53, colunaValor=76, passo=4;
   const textoSeguro=texto=>String(texto||"").replace(/[\u{1F000}-\u{1FAFF}\u2600-\u27BF]/gu,"").replace(/[·−]/g,"-");
   const escreverCentro=texto=>{const linhas=doc.splitTextToSize(textoSeguro(texto),largura);doc.text(linhas,40,y,{align:"center"});y+=linhas.length*passo;};
@@ -1354,6 +1428,7 @@ function criarPDFComprovante() {
   divisor();
   doc.text("Subtotal",margem,y);doc.text(`R$${fmt(v.subtotal||v.total)}`,colunaValor,y,{align:"right"});y+=passo;
   if (v.desconto>0){doc.setTextColor(180,0,0);doc.text("Desconto",margem,y);doc.text(`-R$${fmt(v.desconto)}`,colunaValor,y,{align:"right"});y+=passo;doc.setTextColor(0,0,0);}
+  if (Number(v.frete)>0){doc.text("Frete",margem,y);doc.text(`R$${fmt(v.frete)}`,colunaValor,y,{align:"right"});y+=passo;}
   doc.setFont("Courier","bold");doc.setFontSize(12);doc.text("TOTAL",margem,y);doc.text(`R$${fmt(v.total)}`,colunaValor,y,{align:"right"});y+=6;
   doc.setFont("Courier","normal");doc.setFontSize(9);divisor();
   const nomesPagamento={dinheiro:"Dinheiro",cartao:"Cartao",pix:"Pix"};
@@ -1397,8 +1472,9 @@ function normalizarPedidoRT(p) {
     data: dataHora.toLocaleDateString("pt-BR"),
     hora: dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
     itens: p.itens || [],
-    subtotal: p.total || 0,
-    desconto: 0,
+    subtotal: Number(p.subtotal) || Math.max(0,(Number(p.total)||0)-(Number(p.frete)||0)),
+    desconto: Number(p.desconto) || 0,
+    frete: Number(p.frete) || 0,
     pagamentos: p.pagamentos || {},
     pagamento: p.pagamento || "dinheiro",
     clienteNome: p.cliente_nome || "",
@@ -1480,9 +1556,10 @@ function renderHistorico() {
     const clienteLinha=venda.clienteNome?`<p class="venda-cliente">${ic("user")} ${venda.clienteNome}</p>`:"";
     const acaoHtml=venda.cancelada?`<span class="tag tag-cancelada">Cancelada</span>`:`<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn-invalidar" onclick="cancelarVenda(${index})">Cancelar venda</button><button class="btn-editar-venda" onclick="abrirEditarVenda(${index})">${ic("edit")} Editar</button><button class="btn-copiar" onclick="abrirComprovanteHistorico(${index})">${ic("printer")} Comprovante</button></div>`;
     const descHtml=venda.desconto>0?`<p class="venda-desconto-info">Subtotal R$ ${fmt(venda.subtotal||venda.total)} <span>– Desconto R$ ${fmt(venda.desconto)}</span></p>`:"";
+    const freteHtml=Number(venda.frete)>0?`<p class="venda-frete-info">Frete: R$ ${fmt(venda.frete)}</p>`:"";
     const hora=venda.hora?` às ${venda.hora}`:"";
     const card=document.createElement("div");card.className=`venda-card${venda.cancelada?" cancelada":""}`;
-    card.innerHTML=`<div class="venda-header"><div class="venda-header-esq"><span class="venda-data">${venda.data}${hora}</span><span class="tag tag-origem-vendas">Venda</span>${venda.cancelada?`<span class="tag tag-cancelada">Cancelada</span>`:""}</div><span class="venda-total">R$ ${fmt(venda.total)}</span></div>${clienteLinha}${descHtml}<div class="venda-pagamento">${pagHtml}</div><div class="itens-historico">${itensHtml}</div><div style="margin-top:10px">${acaoHtml}</div>`;
+    card.innerHTML=`<div class="venda-header"><div class="venda-header-esq"><span class="venda-data">${venda.data}${hora}</span><span class="tag tag-origem-vendas">Venda</span>${venda.cancelada?`<span class="tag tag-cancelada">Cancelada</span>`:""}</div><span class="venda-total">R$ ${fmt(venda.total)}</span></div>${clienteLinha}${descHtml}${freteHtml}<div class="venda-pagamento">${pagHtml}</div><div class="itens-historico">${itensHtml}</div><div style="margin-top:10px">${acaoHtml}</div>`;
     lista.appendChild(card);
   });
   document.getElementById("balanco").innerText=fmt(balanco);
@@ -1559,6 +1636,7 @@ async function confirmarSenhaAdmin() {
 
 function _carregarFormEditarVenda() {
   const v=historico[editarVendaIdx];
+  editarFrete=Number(v.frete)||0;
   editarItens=v.itens.map(i=>typeof i==="string"?{nome:i,skuId:null,quantidade:1,preco:0}:{...i});
   editarPagamentos=v.pagamentos?Object.keys(v.pagamentos).filter(k=>v.pagamentos[k]>0):[(v.pagamento||"dinheiro")];
   editarSplit={...v.pagamentos}||{};
@@ -1584,18 +1662,18 @@ function setEditTipoDesconto(tipo){editarTipoDesconto=tipo;["edit-desc-tipo-pct"
 function toggleEditPagamento(tipo){const idx=editarPagamentos.indexOf(tipo);if(idx===-1){editarPagamentos.push(tipo);}else{if(editarPagamentos.length===1){mostrarToast("Ao menos uma forma necessária.","erro");return;}editarPagamentos.splice(idx,1);delete editarSplit[tipo];}["dinheiro","cartao","pix"].forEach(t=>{const b=document.getElementById(`edit-pag-${t}`);if(b)b.classList.toggle("ativo",editarPagamentos.includes(t));});renderEditSplit();atualizarEditarTotal();}
 function _calcEditSubtotal(){return editarItens.reduce((a,i)=>a+i.preco*i.quantidade,0);}
 function _calcEditDesconto(sub){const v=parseFloat(document.getElementById("editarDescontoInput")?.value)||0;if(v<=0)return 0;return editarTipoDesconto==="pct"?Math.min(sub,sub*(v/100)):Math.min(sub,v);}
-function _calcEditTotal(){const s=_calcEditSubtotal(),d=_calcEditDesconto(s);return Math.max(0,s-d);}
+function _calcEditTotal(){const s=_calcEditSubtotal(),d=_calcEditDesconto(s);return Math.max(0,s-d)+editarFrete;}
 function atualizarEditarTotal(){const t=_calcEditTotal();const el=document.getElementById("editarTotalPreview");if(el)el.textContent=`R$ ${fmt(t)}`;if(editarPagamentos.length>1)renderEditSplit();}
 
 async function salvarEdicaoVenda(){
   if (!editarItens.length){mostrarToast("Adicione ao menos um item.","erro");return;}
-  const sub=_calcEditSubtotal(), desc=_calcEditDesconto(sub), total=Math.max(0,sub-desc);
+  const sub=_calcEditSubtotal(), desc=_calcEditDesconto(sub), total=Math.max(0,sub-desc)+editarFrete;
   if (editarPagamentos.length>1){const soma=editarPagamentos.slice(0,-1).reduce((a,t)=>a+(parseFloat(editarSplit[t])||0),0);if(soma>total+.005){mostrarToast("A soma dos pagamentos ultrapassa o total.","erro");return;}}
   const pagamentos=getSplitFinal(editarPagamentos,editarSplit,total);
   const v=historico[editarVendaIdx];
-  const dadosAtualizados={...v,itens:editarItens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:editarPagamentos[0]};
+  const dadosAtualizados={...v,itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]};
   historico[editarVendaIdx]=dadosAtualizados;
-  if (v.firestoreId) await fbAtualizarVenda(v.firestoreId,{itens:editarItens,subtotal:sub,desconto:desc,total,pagamentos,pagamento:editarPagamentos[0]});
+  if (v.firestoreId) await fbAtualizarVenda(v.firestoreId,{itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]});
   fecharEditarVenda();renderHistorico();mostrarToast("Venda atualizada!");
 }
 
@@ -1607,9 +1685,9 @@ function renderDashboard() {
   const iv=intervalo(filtroDashboard,"dashFiltroDataInicio","dashFiltroDataFim");
   const registros=todosRegistros().filter(v=>vendaNoIntervalo(v,iv));
   const canceladas=registros.filter(v=>v.cancelada), vt=registros.filter(v=>!v.cancelada && (v.origem!=="art" || v.status==="atendido"));
-  const rt=vt.reduce((a,v)=>a+(v.total||0),0), custoTotal=vt.reduce((a,v)=>a+(v.itens||[]).reduce((s,item)=>{const produto=produtos.find(p=>p.skuId===item.skuId||p.nome===item.nome);return s+(Number(item.custo??produto?.custo)||0)*(Number(item.quantidade)||1);},0),0), lucro=rt-custoTotal, descontos=vt.reduce((a,v)=>a+(v.desconto||0),0), ticket=vt.length?rt/vt.length:0;
+  const rt=vt.reduce((a,v)=>a+(v.total||0),0), custoTotal=vt.reduce((a,v)=>a+(v.itens||[]).reduce((s,item)=>{const produto=produtos.find(p=>p.skuId===item.skuId||p.nome===item.nome);return s+(Number(item.custo??produto?.custo)||0)*(Number(item.quantidade)||1);},0),0), lucro=rt-custoTotal, descontos=vt.reduce((a,v)=>a+(v.desconto||0),0), fretes=vt.reduce((a,v)=>a+(Number(v.frete)||0),0), ticket=vt.length?rt/vt.length:0;
   const periodoLabel={hoje:"Hoje",semana:"Últimos 7 dias",mes:"Últimos 30 dias",tudo:"Todo o período",custom:"Período personalizado"}[filtroDashboard];
-  document.getElementById("kpiGrid").innerHTML=`<div class="kpi-card"><div class="kpi-icon">${ic("wallet")}</div><div class="kpi-label">Faturamento</div><div class="kpi-value green">R$ ${fmt(rt)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("trending-up")}</div><div class="kpi-label">Lucro líquido</div><div class="kpi-value ${lucro<0?"red":"green"}">R$ ${fmt(lucro)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("cart")}</div><div class="kpi-label">Vendas concluídas</div><div class="kpi-value">${vt.length}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("target")}</div><div class="kpi-label">Ticket médio</div><div class="kpi-value">R$ ${fmt(ticket)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("x-circle")}</div><div class="kpi-label">Vendas canceladas</div><div class="kpi-value">${canceladas.length}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("tag")}</div><div class="kpi-label">Descontos</div><div class="kpi-value">R$ ${fmt(descontos)}</div></div>`;
+  document.getElementById("kpiGrid").innerHTML=`<div class="kpi-card"><div class="kpi-icon">${ic("wallet")}</div><div class="kpi-label">Faturamento</div><div class="kpi-value green">R$ ${fmt(rt)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("package")}</div><div class="kpi-label">Frete cobrado</div><div class="kpi-value">R$ ${fmt(fretes)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("trending-up")}</div><div class="kpi-label">Lucro líquido</div><div class="kpi-value ${lucro<0?"red":"green"}">R$ ${fmt(lucro)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("cart")}</div><div class="kpi-label">Vendas concluídas</div><div class="kpi-value">${vt.length}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("target")}</div><div class="kpi-label">Ticket médio</div><div class="kpi-value">R$ ${fmt(ticket)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("x-circle")}</div><div class="kpi-label">Vendas canceladas</div><div class="kpi-value">${canceladas.length}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("tag")}</div><div class="kpi-label">Descontos</div><div class="kpi-value">R$ ${fmt(descontos)}</div></div>`;
   document.getElementById("dashData").textContent=periodoLabel;
   renderBaixoEstoque();
   const ag=new Date(), dias=[];
@@ -1670,8 +1748,8 @@ function setFiltroRelatorio(f){filtroRelatorio=f;document.querySelectorAll("[id^
 function renderRelatorios() {
   const iv=intervalo(filtroRelatorio,"relDataInicio","relDataFim");
   const filtradas=historico.filter(v=>!v.cancelada&&vendaNoIntervalo(v,iv));
-  const receita=filtradas.reduce((a,v)=>a+v.total,0), pedidos=filtradas.length, ticket=pedidos?receita/pedidos:0, descontos=filtradas.reduce((a,v)=>a+(v.desconto||0),0);
-  document.getElementById("relKpiGrid").innerHTML=`<div class="kpi-card"><div class="kpi-icon">${ic("wallet")}</div><div class="kpi-label">Receita</div><div class="kpi-value green">R$ ${fmt(receita)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("cart")}</div><div class="kpi-label">Pedidos</div><div class="kpi-value">${pedidos}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("target")}</div><div class="kpi-label">Ticket médio</div><div class="kpi-value">R$ ${fmt(ticket)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("tag")}</div><div class="kpi-label">Descontos</div><div class="kpi-value">R$ ${fmt(descontos)}</div></div>`;
+  const receita=filtradas.reduce((a,v)=>a+v.total,0), pedidos=filtradas.length, ticket=pedidos?receita/pedidos:0, descontos=filtradas.reduce((a,v)=>a+(v.desconto||0),0), fretes=filtradas.reduce((a,v)=>a+(Number(v.frete)||0),0);
+  document.getElementById("relKpiGrid").innerHTML=`<div class="kpi-card"><div class="kpi-icon">${ic("wallet")}</div><div class="kpi-label">Receita</div><div class="kpi-value green">R$ ${fmt(receita)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("package")}</div><div class="kpi-label">Frete cobrado</div><div class="kpi-value">R$ ${fmt(fretes)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("cart")}</div><div class="kpi-label">Pedidos</div><div class="kpi-value">${pedidos}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("target")}</div><div class="kpi-label">Ticket médio</div><div class="kpi-value">R$ ${fmt(ticket)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("tag")}</div><div class="kpi-label">Descontos</div><div class="kpi-value">R$ ${fmt(descontos)}</div></div>`;
   const pp={dinheiro:0,cartao:0,pix:0};
   filtradas.forEach(v=>{if(v.pagamentos)Object.entries(v.pagamentos).forEach(([t,val])=>{if(pp[t]!==undefined)pp[t]+=val;});else pp[v.pagamento||"dinheiro"]+=v.total;});
   const tpp=Object.values(pp).reduce((a,b)=>a+b,0)||1;
@@ -2056,7 +2134,7 @@ function renderPedidoRTCard(p) {
     </div>
     <p class="pedido-rt-itens">${itensTxt}</p>
     <div class="pedido-rt-rodape">
-      <span class="pedido-rt-total">R$ ${fmt(p.total)} · ${pagTxt}</span>
+      <span class="pedido-rt-total">R$ ${fmt(p.total)} · ${pagTxt}${Number(p.frete)>0?` · Frete R$ ${fmt(Number(p.frete))}`:""}</span>
       <span class="pedido-rt-tel">${ic("phone")} ${p.cliente_telefone||"—"}</span>
     </div>
     <div class="pedido-rt-acoes">
@@ -2105,6 +2183,8 @@ let splitCatalogo = {};
 let whatsappLojaPublico = "";
 let cupomCatalogo = { codigo: "", percentual: 0 };
 let cupomCatalogoAplicado = false;
+let freteGratisMinimoPublico = 0;
+let valorFretePublico = 0;
 let arrastoCarrinhoCatalogo = null;
 let ignorarCliqueCarrinhoCatalogo = false;
 let carrinhoCatalogoHistoricoAtivo = false;
@@ -2210,6 +2290,8 @@ async function iniciarModoCatalogo() {
     aplicarIdentidadeCatalogo(loja);
     whatsappLojaPublico = normalizarTelefoneWhatsApp(loja.whatsapp);
     cupomCatalogo = { codigo: (loja.cupom_codigo || "").trim().toUpperCase(), percentual: Math.min(100, Math.max(0, parseFloat(loja.cupom_percentual) || 0)) };
+    freteGratisMinimoPublico = Math.max(0, Number(loja.frete_minimo) || 0);
+    valorFretePublico = Math.max(0, Number(loja.valor_frete) || 0);
     const ids = loja.catalogo_produtos || [];
     if (!ids.length) { document.getElementById("catalogoListaProdutos").innerHTML = `<p class="catalogo-vazio">Nenhum produto disponível no momento.</p>`; return; }
     const { data, error } = await supabase.from("catalogo_publico").select("*").eq("user_id", LOJA_CATALOGO_ID).in("id", ids);
@@ -2269,7 +2351,25 @@ function alterarQtdCatalogo(id, delta) {
 
 function subtotalCatalogo() { return Object.values(carrinhoCatalogo).reduce((s,i)=>s+i.preco*i.quantidade,0); }
 function descontoCatalogo() { return cupomCatalogoAplicado ? subtotalCatalogo() * (cupomCatalogo.percentual / 100) : 0; }
-function totalCatalogo() { return Math.max(0, subtotalCatalogo() - descontoCatalogo()); }
+function freteCatalogo() {
+  if (freteGratisMinimoPublico<=0 || valorFretePublico<=0) return 0;
+  return Math.max(0,subtotalCatalogo()-descontoCatalogo())>=freteGratisMinimoPublico ? 0 : valorFretePublico;
+}
+function totalCatalogo() { return Math.max(0, subtotalCatalogo() - descontoCatalogo()) + freteCatalogo(); }
+function renderResumoValoresCatalogo() {
+  const resumo=document.getElementById("catalogoResumoValores");
+  if (!resumo) return;
+  const subtotal=subtotalCatalogo(), desconto=descontoCatalogo(), frete=freteCatalogo();
+  const freteLinha=freteGratisMinimoPublico>0
+    ?`<div class="catalogo-resumo-linha"><span>Frete${frete===0?" grátis":""}</span><span>${frete===0?"Grátis":`R$ ${fmt(frete)}`}</span></div>`
+    :"";
+  resumo.innerHTML=`
+    <div class="catalogo-resumo-linha"><span>Subtotal</span><span>R$ ${fmt(subtotal)}</span></div>
+    ${desconto>0?`<div class="catalogo-resumo-linha catalogo-resumo-desconto"><span>Desconto</span><span>− R$ ${fmt(desconto)}</span></div>`:""}
+    ${freteLinha}
+    ${frete>0?`<small class="catalogo-frete-ajuda">Frete grátis a partir de R$ ${fmt(freteGratisMinimoPublico)} em produtos.</small>`:""}
+    <div class="catalogo-resumo-linha catalogo-resumo-total"><span>Total</span><span>R$ <span id="catalogoTotalValor">${fmt(totalCatalogo())}</span></span></div>`;
+}
 
 function atualizarCupomCatalogo() {
   const input = document.getElementById("catalogoCupomInput");
@@ -2293,20 +2393,13 @@ function renderCarrinhoCatalogo() {
   atualizarResumoMinimizadoCatalogo();
   if (!carrinhoCatalogoHistoricoAtivo && !wrap.classList.contains("minimizado")) abrirCarrinhoCatalogo();
   document.getElementById("catalogoCarrinhoItens").innerHTML = itens.map(i=>`<div class="carrinho-item-row"><span>${i.quantidade}x ${i.nome}</span><span>R$ ${fmt(i.preco*i.quantidade)}</span></div>`).join("");
-  document.getElementById("catalogoTotalValor").textContent = fmt(totalCatalogo());
-  const cupomDesconto = descontoCatalogo();
-  const totalRow = document.querySelector(".catalogo-total-row");
-  if (totalRow) totalRow.innerHTML = `<span>${cupomDesconto > 0 ? `Total <small class="catalogo-total-original">(R$ ${fmt(subtotalCatalogo())})</small>` : "Total"}</span><span>R$ <span id="catalogoTotalValor">${fmt(totalCatalogo())}</span></span>`;
   atualizarTotalCatalogo();
   if (wrap.classList.contains("minimizado")) atualizarResumoMinimizadoCatalogo();
 }
 
 function atualizarTotalCatalogo() {
   const total = totalCatalogo();
-  const totalEl = document.getElementById("catalogoTotalValor");
-  if (totalEl) totalEl.textContent = fmt(total);
-  const totalRow = document.querySelector(".catalogo-total-row");
-  if (totalRow) totalRow.innerHTML = `<span>${descontoCatalogo() > 0 ? `Total <small class="catalogo-total-original">(R$ ${fmt(subtotalCatalogo())})</small>` : "Total"}</span><span>R$ <span id="catalogoTotalValor">${fmt(total)}</span></span>`;
+  renderResumoValoresCatalogo();
   renderSplitPagamentoCatalogo();
 }
 
@@ -2349,6 +2442,9 @@ async function finalizarPedidoCatalogo() {
   if (!itens.length) { mostrarToast("Adicione ao menos um produto.","erro"); return; }
   if (!nome || !telefone || !endereco) { mostrarToast("Preencha nome, telefone e endereço.","erro"); return; }
   const total = totalCatalogo();
+  const subtotal = subtotalCatalogo();
+  const desconto = descontoCatalogo();
+  const frete = freteCatalogo();
   const pagamentosFinal = getSplitFinal(pagamentosCatalogo, splitCatalogo, total);
   mostrarLoading("Enviando pedido...");
   const { error } = await supabase.rpc("criar_pedido_rt", {
@@ -2360,6 +2456,8 @@ async function finalizarPedidoCatalogo() {
     p_total: total,
     p_pagamento: pagamentosCatalogo.join("+"),
     p_pagamentos: pagamentosFinal,
+    p_subtotal: subtotal,
+    p_desconto: desconto,
   });
   esconderLoading();
   if (error) {
@@ -2370,7 +2468,9 @@ async function finalizarPedidoCatalogo() {
   const itensTxt = itens.map(i=>`- ${i.quantidade}x ${i.nome} (R$ ${fmt(i.preco*i.quantidade)})`).join("\n");
   const pagsTxt = Object.entries(pagamentosFinal).filter(([,v])=>v>0).map(([t,v])=>pagamentosCatalogo.length>1?`${ICONE_PAGAMENTO[t]}: R$ ${fmt(v)}`:ICONE_PAGAMENTO[t]).join(" + ");
   const cupomTxt = cupomCatalogoAplicado ? `\nCupom: ${cupomCatalogo.codigo} (${cupomCatalogo.percentual}% de desconto)` : "";
-  const msg = `Olá! Gostaria de fazer o seguinte pedido:\n\n${itensTxt}${cupomTxt}\n\n*Total: R$ ${fmt(total)}*\nForma de pagamento: ${pagsTxt}\n\nNome: ${nome}\nEndereço: ${endereco}`;
+  const descontoTxt=desconto>0?`\nDesconto: - R$ ${fmt(desconto)}`:"";
+  const freteTxt=freteGratisMinimoPublico>0?`\nFrete: ${frete===0?"Grátis":`R$ ${fmt(frete)}`}`:"";
+  const msg = `Olá! Gostaria de fazer o seguinte pedido:\n\n${itensTxt}${cupomTxt}\nSubtotal: R$ ${fmt(subtotal)}${descontoTxt}${freteTxt}\n\n*Total: R$ ${fmt(total)}*\nForma de pagamento: ${pagsTxt}\n\nNome: ${nome}\nEndereço: ${endereco}`;
   if (whatsappLojaPublico) window.location.href = `https://wa.me/${whatsappLojaPublico}?text=${encodeURIComponent(msg)}`;
   else mostrarToast("Pedido enviado! A loja não configurou um WhatsApp.");
 }
@@ -2409,7 +2509,8 @@ Object.assign(window, {
   setFiltroRelatorio, exportarCSV, exportarRelPDF, copiarPedido,
   // Configurações
   definirTema, trocarSenha, atualizarFotoPerfil, removerFotoPerfil,
-  salvarNomeLoja, selecionarCorLoja, selecionarFonteLoja, atualizarPreviewLoja,
+  salvarNomeLoja, selecionarCorLoja, selecionarFonteLoja, atualizarPreviewLoja, salvarFreteLoja,
+  alternarFreteVenda,
   resetarOrdemMenu, salvarWhatsappLoja, salvarCupomLoja, atualizarCupomCatalogo,
   // Atendimento RT (admin)
   toggleCatalogoProdutoRT, marcarTodosCatalogoRT, desmarcarTodosCatalogoRT, copiarLinkCatalogoRT, marcarPedidoRTAtendido, cancelarPedidoRT, ativarNotificacoesPedidos,
@@ -2431,6 +2532,8 @@ function renderConfiguracoes() {
   const iw=document.getElementById("whatsappLoja");if(iw)iw.value=lojaConfigAtual.whatsapp||"";
   const ic=document.getElementById("cupomCodigoLoja");if(ic)ic.value=lojaConfigAtual.cupom_codigo||"";
   const ip=document.getElementById("cupomPercentualLoja");if(ip)ip.value=lojaConfigAtual.cupom_percentual||"";
+  const fm=document.getElementById("freteGratisMinimo");if(fm)fm.value=Number(lojaConfigAtual.frete_minimo)||"";
+  const vf=document.getElementById("valorFreteLoja");if(vf)vf.value=Number(lojaConfigAtual.valor_frete)||"";
   renderLojaConfigUI();renderMenuOrderList();
 }
 

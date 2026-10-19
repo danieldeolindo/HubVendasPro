@@ -10,10 +10,11 @@
 ALTER TABLE produtos ADD COLUMN IF NOT EXISTS foto_url TEXT DEFAULT '';
 ALTER TABLE produtos ADD COLUMN IF NOT EXISTS custo NUMERIC DEFAULT 0;
 ALTER TABLE produtos ADD COLUMN IF NOT EXISTS estoque INTEGER DEFAULT 0;
+ALTER TABLE historico DROP CONSTRAINT IF EXISTS historico_cliente_id_fkey;
 ALTER TABLE historico ALTER COLUMN cliente_id TYPE TEXT USING cliente_id::text;
 ALTER TABLE historico ADD COLUMN IF NOT EXISTS cliente_telefone TEXT DEFAULT '';
 ALTER TABLE historico ADD COLUMN IF NOT EXISTS cliente_endereco TEXT DEFAULT '';
-ALTER TABLE pedidos_rt ADD COLUMN IF NOT EXISTS cliente_endereco TEXT DEFAULT '';
+ALTER TABLE historico ADD COLUMN IF NOT EXISTS frete NUMERIC DEFAULT 0;
 
 -- =====================================================
 --  SCHEMA COMPLETO (do zero) — pode usar no lugar do

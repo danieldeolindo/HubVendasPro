@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS historico (
   itens         JSONB   DEFAULT '[]',
   subtotal      NUMERIC DEFAULT 0,
   desconto      NUMERIC DEFAULT 0,
+  frete         NUMERIC DEFAULT 0,
   total         NUMERIC DEFAULT 0,
   pagamento     TEXT    DEFAULT 'dinheiro',
   pagamentos    JSONB   DEFAULT '{}',
