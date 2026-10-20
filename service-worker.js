@@ -1,4 +1,4 @@
-const CACHE_NAME = "hubvendaspro-v3";
+const CACHE_NAME = "hubvendaspro-v4";
 const APP_SHELL = ["./", "./index.html", "./style.css", "./script.js", "./icons.js", "./manifest.json", "./favicon/logo.png"];
 
 self.addEventListener("install", event => {

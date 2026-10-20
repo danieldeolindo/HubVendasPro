@@ -632,7 +632,7 @@ function navegarPara(pagina) {
   document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
   document.getElementById(`page-${pagina}`)?.classList.add("active");
   renderNavs(pagina);
-  if (pagina==="dashboard")     renderDashboard();
+  if (pagina==="dashboard")     { renderDashboard(); subscribeRealtimeAtendimento(); }
   if (pagina==="estoque")       renderEstoque();
   if (pagina==="vendas")        { atualizarFreteVendaUI(); renderProdutos(); atualizarSugestoesClientesVenda(); }
   if (pagina==="admin")         { renderProdutosAdmin(); atualizarSugestoesCategorias(); }
@@ -640,7 +640,7 @@ function navegarPara(pagina) {
   if (pagina==="historico")     renderHistorico();
   if (pagina==="atendimento")   renderAtendimentoRT();
   if (pagina==="configuracoes") renderConfiguracoes();
-  if (pagina!=="atendimento" && canalPedidosRT) { supabase.removeChannel(canalPedidosRT); canalPedidosRT=null; }
+  if (pagina!=="atendimento" && pagina!=="dashboard" && canalPedidosRT) { supabase.removeChannel(canalPedidosRT); canalPedidosRT=null; }
 }
 
 /* ─────────────────────────────────────────
@@ -1902,8 +1902,10 @@ async function carregarPedidosRTIniciais() {
     feed.innerHTML = `<p style="color:var(--red);font-size:13px;padding:8px 0">Erro ao carregar pedidos: ${error.message || "permissão negada"}</p>`;
     return;
   }
-  pedidosRT = data || [];
-  idsPedidosRTConhecidos = new Set(pedidosRT.map(p => String(p.id)));
+  const pedidosPorId = new Map(pedidosRT.map(p => [String(p.id), p]));
+  (data || []).map(normalizarPedidoRT).forEach(pedido => pedidosPorId.set(String(pedido.id), pedido));
+  pedidosRT = [...pedidosPorId.values()];
+  (data || []).forEach(pedido => idsPedidosRTConhecidos.add(String(pedido.id)));
   atualizarStatusNotificacoesPedidos();
   if (!data?.length) { feed.innerHTML = `<p class="catalogo-feed-vazio-msg" style="color:var(--text3);font-size:13px;padding:8px 0">Nenhum pedido encontrado. Compartilhe o link do catálogo com seus clientes.</p>`; iniciarAtualizacaoDiariaFeedRT(); return; }
   feed.innerHTML = data.map(renderPedidoRTCard).join("");
@@ -2114,6 +2116,15 @@ function subscribeRealtimeAtendimento() {
       if (document.getElementById("page-dashboard")?.classList.contains("active")) renderDashboard();
       if (document.getElementById("page-historico")?.classList.contains("active")) renderHistorico();
     })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos_rt", filter: `loja_user_id=eq.${usuarioAtual.id}` }, (payload) => {
+      const indice = pedidosRT.findIndex(p => String(p.id) === String(payload.new.id));
+      if (indice === -1) return;
+      pedidosRT[indice] = normalizarPedidoRT(payload.new);
+      if (document.getElementById("page-dashboard")?.classList.contains("active")) renderDashboard();
+      if (document.getElementById("page-historico")?.classList.contains("active")) renderHistorico();
+      const card = document.getElementById(`pedidoRT-${payload.new.id}`);
+      if (card) card.outerHTML = renderPedidoRTCard(payload.new);
+    })
     .subscribe(status => {
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("Realtime de pedidos indisponível; usando sincronização automática.", status);
     });
@@ -2155,6 +2166,7 @@ async function marcarPedidoRTAtendido(id) {
   if (error) { mostrarToast("Erro ao atualizar pedido.","erro"); return; }
   const pedido = pedidosRT.find(p => String(p.id) === String(id));
   if (pedido) { pedido.status = "atendido"; pedido.cancelada = false; }
+  renderDashboard();
   renderHistorico();
   if (document.getElementById("page-atendimento")?.classList.contains("active")) renderAtendimentoRT();
   mostrarToast("Pedido marcado como atendido.");
@@ -2344,7 +2356,7 @@ function alterarQtdCatalogo(id, delta) {
   const nova = Math.min(estoque, Math.max(0, atual+delta));
   if (delta > 0 && nova === atual && estoque > 0) { mostrarToast("Quantidade maior que o estoque disponivel.", "erro"); return; }
   if (nova===0) delete carrinhoCatalogo[id];
-  else carrinhoCatalogo[id] = { nome:p.nome, preco:p.preco, quantidade:nova, fotoUrl:p.foto_url||"" };
+  else carrinhoCatalogo[id] = { produtoId:p.id, nome:p.nome, preco:p.preco, quantidade:nova, fotoUrl:p.foto_url||"" };
   const badge = document.getElementById(`catQtd-${id}`); if (badge) badge.textContent = nova;
   renderCarrinhoCatalogo();
 }
@@ -2452,7 +2464,7 @@ async function finalizarPedidoCatalogo() {
     p_cliente_nome: nome,
     p_cliente_telefone: telefone,
     p_cliente_endereco: endereco,
-    p_itens: itens.map(i=>({nome:i.nome,quantidade:i.quantidade,preco:i.preco,fotoUrl:i.fotoUrl||""})),
+    p_itens: itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.preco,fotoUrl:i.fotoUrl||""})),
     p_total: total,
     p_pagamento: pagamentosCatalogo.join("+"),
     p_pagamentos: pagamentosFinal,

@@ -37,6 +37,10 @@ DECLARE
   valor_frete NUMERIC := 0;
   frete_calculado NUMERIC := 0;
   total_calculado NUMERIC := 0;
+  itens_com_custo JSONB := '[]'::jsonb;
+  item_json JSONB;
+  produto_id UUID;
+  custo_produto NUMERIC;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM config WHERE user_id = p_loja_user_id) THEN
     RAISE EXCEPTION 'Loja não encontrada';
@@ -82,6 +86,40 @@ BEGIN
     END IF;
   END IF;
 
+  IF jsonb_typeof(COALESCE(p_itens, '[]'::jsonb)) <> 'array' THEN
+    RAISE EXCEPTION 'Itens do pedido inválidos';
+  END IF;
+
+  FOR item_json IN
+    SELECT value FROM jsonb_array_elements(COALESCE(p_itens, '[]'::jsonb))
+  LOOP
+    IF jsonb_typeof(item_json) <> 'object' THEN
+      RAISE EXCEPTION 'Item do pedido inválido';
+    END IF;
+
+    BEGIN
+      produto_id := NULLIF(item_json->>'produtoId', '')::uuid;
+    EXCEPTION WHEN invalid_text_representation THEN
+      RAISE EXCEPTION 'Produto inválido no pedido';
+    END;
+
+    IF produto_id IS NULL THEN
+      RAISE EXCEPTION 'Produto não identificado no pedido';
+    END IF;
+
+    SELECT custo INTO custo_produto
+    FROM produtos
+    WHERE id = produto_id AND user_id = p_loja_user_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Produto do pedido não encontrado';
+    END IF;
+
+    itens_com_custo := itens_com_custo || jsonb_build_array(
+      item_json || jsonb_build_object('custo', COALESCE(custo_produto, 0))
+    );
+  END LOOP;
+
   INSERT INTO pedidos_rt (
     loja_user_id, cliente_nome, cliente_telefone, cliente_endereco, itens,
     subtotal, desconto, frete, total, pagamento, pagamentos, status
@@ -91,7 +129,7 @@ BEGIN
     COALESCE(NULLIF(trim(p_cliente_nome), ''), 'Cliente'),
     COALESCE(p_cliente_telefone, ''),
     COALESCE(p_cliente_endereco, ''),
-    COALESCE(p_itens, '[]'::jsonb),
+    itens_com_custo,
     COALESCE(p_subtotal, p_total, 0),
     COALESCE(p_desconto, 0),
     frete_calculado,
