@@ -431,7 +431,7 @@ async function removerImagem(k) {
 ───────────────────────────────────────── */
 const LOJA_CORES=[{hex:"#00bf63",label:"Verde"},{hex:"#e53935",label:"Vermelho"},{hex:"#2563eb",label:"Azul"},{hex:"#f59e0b",label:"Amarelo"},{hex:"#8b5cf6",label:"Roxo"},{hex:"#ec4899",label:"Rosa"},{hex:"#0d9488",label:"Teal"},{hex:"#ea580c",label:"Laranja"},{hex:"#0d0d0d",label:"Preto"}];
 const LOJA_FONTES=[{id:"jakarta",label:"Plus Jakarta Sans",css:"'Plus Jakarta Sans', sans-serif"},{id:"mono",label:"DM Mono",css:"'DM Mono', monospace"},{id:"serif",label:"Georgia (Serif)",css:"Georgia, serif"},{id:"rounded",label:"Verdana",css:"Verdana, sans-serif"}];
-let lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:"",cupom_codigo:"",cupom_percentual:0,frete_minimo:0,valor_frete:0};
+let lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:"",cupom_codigo:"",cupom_percentual:0,frete_minimo:0,valor_frete:0,juros_cartao_percentual:0};
 let _menuOrdemLocal = null;
 let catalogoSelecionado = [];   // array de firestoreId (uuid) dos produtos no catálogo público
 let canalPedidosRT = null;      // referência do canal Realtime (Atendimento RT)
@@ -477,6 +477,23 @@ async function salvarFreteLoja() {
   atualizarFreteVendaUI();
   mostrarToast(minimo>0?"Configuração de frete salva!":"Frete desativado.");
 }
+async function salvarJurosCartaoLoja() {
+  const input=document.getElementById("jurosCartaoLoja");
+  const percentual=input?.value.trim()===""?0:Number(input?.value);
+  if (!Number.isFinite(percentual)||percentual<0||percentual>100) {
+    mostrarToast("Informe uma porcentagem de juros entre 0 e 100.","erro");
+    return;
+  }
+  const configuracaoAnterior=lojaConfigAtual;
+  lojaConfigAtual={...lojaConfigAtual,juros_cartao_percentual:percentual};
+  if (!await fbSalvarConfig({lojaConfig:lojaConfigAtual})) {
+    lojaConfigAtual=configuracaoAnterior;
+    mostrarToast("Não foi possível salvar os juros do cartão.","erro");
+    return;
+  }
+  atualizarTotal();
+  mostrarToast(percentual>0?"Juros do cartão salvos!":"Juros do cartão desativados.");
+}
 function freteConfigurado() {
   return Number(lojaConfigAtual.frete_minimo)>0 && Number(lojaConfigAtual.valor_frete)>0;
 }
@@ -486,6 +503,16 @@ function calcularFrete(subtotalLiquido) {
 }
 function freteAtualVenda(subtotal,desconto) {
   return freteVendaAtivo && subtotal>0 ? calcularFrete(Math.max(0,subtotal-desconto)) : 0;
+}
+function calcularJurosCartao(valorCartao) {
+  const percentual=Math.min(100,Math.max(0,Number(lojaConfigAtual.juros_cartao_percentual)||0));
+  return Math.round(Math.max(0,valorCartao)*percentual)/100;
+}
+function calcularPagamentosComJuros(formas,splits,totalBase) {
+  const pagamentos=getSplitFinal(formas,splits,totalBase);
+  const juros=calcularJurosCartao(pagamentos.cartao||0);
+  if (juros>0) pagamentos.cartao+=juros;
+  return {pagamentos,juros,total:totalBase+juros};
 }
 function alternarFreteVenda(ativo) {
   freteVendaAtivo=Boolean(ativo);
@@ -1049,14 +1076,16 @@ function calcularSubtotal() {
 }
 function calcularTotalFinal() {
   const subtotal=calcularSubtotal(), desconto=calcularDesconto(subtotal);
-  return Math.max(0,subtotal-desconto)+freteAtualVenda(subtotal,desconto);
+  const totalBase=Math.max(0,subtotal-desconto)+freteAtualVenda(subtotal,desconto);
+  return calcularPagamentosComJuros(pagamentosSelecionados,splitPagamento,totalBase).total;
 }
 
-function atualizarTotal() {
-  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), total=Math.max(0,sub-desc)+frete;
+function atualizarTotal(atualizarSplit=true) {
+  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), totalBase=Math.max(0,sub-desc)+frete;
+  const {juros,total}=calcularPagamentosComJuros(pagamentosSelecionados,splitPagamento,totalBase);
   const el=document.getElementById("total"); if (el) el.innerText=fmt(total);
   const prev=document.getElementById("descontoPreview");
-  if (prev) prev.textContent=desc>0?`Subtotal R$ ${fmt(sub)}  –  Desconto R$ ${fmt(desc)}${frete>0?`  +  Frete R$ ${fmt(frete)}`:""}  =  R$ ${fmt(total)}`:frete>0?`Frete R$ ${fmt(frete)} incluído no total.`:"";
+  if (prev) prev.textContent=desc>0?`Subtotal R$ ${fmt(sub)}  –  Desconto R$ ${fmt(desc)}${frete>0?`  +  Frete R$ ${fmt(frete)}`:""}${juros>0?`  +  Juros cartão R$ ${fmt(juros)}`:""}  =  R$ ${fmt(total)}`:frete>0||juros>0?`${frete>0?`Frete R$ ${fmt(frete)} incluído no total.`:""}${juros>0?`${frete>0?" ":""}Juros do cartão: R$ ${fmt(juros)}.`:""}`:"";
   const freteResumo=document.getElementById("freteVendaResumo");
   if (freteResumo && freteVendaAtivo) {
     const subtotalLiquido=Math.max(0,sub-desc);
@@ -1069,7 +1098,7 @@ function atualizarTotal() {
   const resumo=document.getElementById("finalizarResumo");
   if (resumo) { const q=Object.values(carrinho).reduce((a,b)=>a+b,0); resumo.innerHTML=q>0?`<strong>${q}</strong> ite${q>1?"ns":"m"} · Total: <strong>R$ ${fmt(total)}</strong>`:""; }
   renderCarrinho();
-  if (pagamentosSelecionados.length>1) renderSplitPagamento();
+  if (atualizarSplit && pagamentosSelecionados.length>1) renderSplitPagamento();
 }
 
 function renderCarrinho() {
@@ -1078,7 +1107,8 @@ function renderCarrinho() {
   const itensCarrinho=Object.entries(carrinho).filter(([,q])=>q>0);
   if (itensCarrinho.length===0) { card.style.display="none"; return; }
   card.style.display="block";
-  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), tot=Math.max(0,sub-desc)+frete;
+  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), totalBase=Math.max(0,sub-desc)+frete;
+  const {juros,total:tot}=calcularPagamentosComJuros(pagamentosSelecionados,splitPagamento,totalBase);
   itensEl.innerHTML=itensCarrinho.map(([id,qtd])=>{
     const p=produtos.find(p=>p.id===Number(id)); if (!p) return "";
     return `<div class="carrinho-item">
@@ -1096,6 +1126,7 @@ function renderCarrinho() {
     <div class="carrinho-subtotal-row"><span>Subtotal</span><span class="mono">R$ ${fmt(sub)}</span></div>
     ${desc>0?`<div class="carrinho-subtotal-row desc"><span>Desconto</span><span class="mono red">− R$ ${fmt(desc)}</span></div>`:""}
     ${frete>0?`<div class="carrinho-subtotal-row"><span>Frete</span><span class="mono">R$ ${fmt(frete)}</span></div>`:""}
+    ${juros>0?`<div class="carrinho-subtotal-row"><span>Juros do cartão</span><span class="mono">R$ ${fmt(juros)}</span></div>`:""}
     <div class="carrinho-subtotal-row total-row"><span>Total</span><span class="mono green">R$ ${fmt(tot)}</span></div>`;
 }
 
@@ -1116,20 +1147,25 @@ function renderSplitPagamento() {
   const c=document.getElementById("pagamentoSplit"); if (!c) return;
   if (pagamentosSelecionados.length<=1) { c.classList.add("hidden"); c.innerHTML=""; splitPagamento={}; return; }
   c.classList.remove("hidden");
-  _renderSplitHTML(c, pagamentosSelecionados, splitPagamento, calcularTotalFinal(), "onSplitInput", "splitAviso");
+  _renderSplitHTML(c, pagamentosSelecionados, splitPagamento, calcularTotalBaseVenda(), "onSplitInput", "splitAviso");
 }
-function onSplitInput(tipo) { splitPagamento[tipo]=parseFloat(document.getElementById(`split-input-${tipo}`)?.value)||0; _atualizarResto(pagamentosSelecionados,splitPagamento,calcularTotalFinal(),"splitAviso"); }
+function calcularTotalBaseVenda() {
+  const subtotal=calcularSubtotal(), desconto=calcularDesconto(subtotal);
+  return Math.max(0,subtotal-desconto)+freteAtualVenda(subtotal,desconto);
+}
+function onSplitInput(tipo) { splitPagamento[tipo]=parseFloat(document.getElementById(`split-input-${tipo}`)?.value)||0; _atualizarResto(pagamentosSelecionados,splitPagamento,calcularTotalBaseVenda(),"splitAviso"); atualizarTotal(false); }
 
 function renderEditSplit() {
   const c=document.getElementById("editarPagamentoSplit"); if (!c) return;
   if (editarPagamentos.length<=1) { c.classList.add("hidden"); c.innerHTML=""; editarSplit={}; return; }
   c.classList.remove("hidden");
-  _renderSplitHTML(c, editarPagamentos, editarSplit, _calcEditTotal(), "onEditSplitInput", "editSplitAviso");
+  _renderSplitHTML(c, editarPagamentos, editarSplit, _calcEditTotalBase(), "onEditSplitInput", "editSplitAviso");
 }
-function onEditSplitInput(tipo) { editarSplit[tipo]=parseFloat(document.getElementById(`split-input-${tipo}`)?.value)||0; _atualizarResto(editarPagamentos,editarSplit,_calcEditTotal(),"editSplitAviso"); atualizarEditarTotal(); }
+function onEditSplitInput(tipo) { editarSplit[tipo]=parseFloat(document.getElementById(`split-input-${tipo}`)?.value)||0; _atualizarResto(editarPagamentos,editarSplit,_calcEditTotalBase(),"editSplitAviso"); atualizarEditarTotal(false); }
 
 function _renderSplitHTML(container, formas, splits, total, cbInput, cbAviso) {
-  let html=`<p style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Dividir valor (R$ ${fmt(total)})</p>`;
+  const detalheJuros=formas.includes("cartao")&&Number(lojaConfigAtual.juros_cartao_percentual)>0?" base, antes dos juros":"";
+  let html=`<p style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Dividir valor${detalheJuros} (R$ ${fmt(total)})</p>`;
   formas.forEach((tipo,i) => {
     const isUlt=(i===formas.length-1);
     if (isUlt) { const soma=formas.filter((_,j)=>j!==i).reduce((a,t)=>a+(parseFloat(splits[t])||0),0), resto=Math.max(0,total-soma); html+=`<div class="pagamento-split-row"><span class="pagamento-split-label">${ICONE_PAGAMENTO_HTML[tipo]}</span><span class="pagamento-split-resto" id="split-resto-${tipo}">R$ ${fmt(resto)} (restante)</span></div>`; }
@@ -1318,15 +1354,15 @@ async function finalizarPedido() {
   const itensIds=Object.keys(carrinho).filter(id=>carrinho[id]>0);
   if (!itensIds.length){mostrarToast("Carrinho vazio!","erro");return;}
   if (pagamentosSelecionados.length>1){
-    const total=calcularTotalFinal(), soma=pagamentosSelecionados.slice(0,-1).reduce((a,t)=>a+(parseFloat(splitPagamento[t])||0),0);
+    const total=calcularTotalBaseVenda(), soma=pagamentosSelecionados.slice(0,-1).reduce((a,t)=>a+(parseFloat(splitPagamento[t])||0),0);
     if (soma>total+.005){mostrarToast("A soma dos pagamentos ultrapassa o total.","erro");return;}
   }
   const itens=itensIds.map(id=>{const p=produtos.find(p=>p.id===Number(id));return{nome:p.nome,skuId:p.skuId,quantidade:carrinho[id],preco:p.preco,fotoUrl:p.fotoUrl||""};});
   const semEstoque=itensIds.find(id=>{const p=produtos.find(p=>p.id===Number(id));return (p.estoque||0)<carrinho[id];});
   if (semEstoque){const p=produtos.find(p=>p.id===Number(semEstoque));mostrarToast(`Estoque insuficiente para ${p.nome}.` ,"erro");return;}
   itens.forEach(item=>{const p=produtos.find(prod=>prod.skuId===item.skuId);item.custo=p?.custo||0;});
-  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), total=Math.max(0,sub-desc)+frete;
-  const pagamentos=getSplitFinal(pagamentosSelecionados,splitPagamento,total);
+  const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), totalBase=Math.max(0,sub-desc)+frete;
+  const {pagamentos,total}=calcularPagamentosComJuros(pagamentosSelecionados,splitPagamento,totalBase);
   const clienteObj=clienteVendaSelecionadoId!==null
     ? clientes.find(c=>String(c.id)===String(clienteVendaSelecionadoId))
     : null;
@@ -1640,6 +1676,9 @@ function _carregarFormEditarVenda() {
   editarItens=v.itens.map(i=>typeof i==="string"?{nome:i,skuId:null,quantidade:1,preco:0}:{...i});
   editarPagamentos=v.pagamentos?Object.keys(v.pagamentos).filter(k=>v.pagamentos[k]>0):[(v.pagamento||"dinheiro")];
   editarSplit={...v.pagamentos}||{};
+  const totalBaseSalvo=Math.max(0,Number(v.subtotal??v.total)-Number(v.desconto||0))+editarFrete;
+  const jurosSalvos=Math.max(0,Number(v.total)-totalBaseSalvo);
+  if (editarSplit.cartao>0&&jurosSalvos>0) editarSplit.cartao=Math.max(0,editarSplit.cartao-jurosSalvos);
   editarTipoDesconto="val";
   const descInput=document.getElementById("editarDescontoInput"); if (descInput) descInput.value=v.desconto||0;
   document.getElementById("editarDescontoSufixo").textContent="R$";
@@ -1662,14 +1701,15 @@ function setEditTipoDesconto(tipo){editarTipoDesconto=tipo;["edit-desc-tipo-pct"
 function toggleEditPagamento(tipo){const idx=editarPagamentos.indexOf(tipo);if(idx===-1){editarPagamentos.push(tipo);}else{if(editarPagamentos.length===1){mostrarToast("Ao menos uma forma necessária.","erro");return;}editarPagamentos.splice(idx,1);delete editarSplit[tipo];}["dinheiro","cartao","pix"].forEach(t=>{const b=document.getElementById(`edit-pag-${t}`);if(b)b.classList.toggle("ativo",editarPagamentos.includes(t));});renderEditSplit();atualizarEditarTotal();}
 function _calcEditSubtotal(){return editarItens.reduce((a,i)=>a+i.preco*i.quantidade,0);}
 function _calcEditDesconto(sub){const v=parseFloat(document.getElementById("editarDescontoInput")?.value)||0;if(v<=0)return 0;return editarTipoDesconto==="pct"?Math.min(sub,sub*(v/100)):Math.min(sub,v);}
-function _calcEditTotal(){const s=_calcEditSubtotal(),d=_calcEditDesconto(s);return Math.max(0,s-d)+editarFrete;}
-function atualizarEditarTotal(){const t=_calcEditTotal();const el=document.getElementById("editarTotalPreview");if(el)el.textContent=`R$ ${fmt(t)}`;if(editarPagamentos.length>1)renderEditSplit();}
+function _calcEditTotalBase(){const s=_calcEditSubtotal(),d=_calcEditDesconto(s);return Math.max(0,s-d)+editarFrete;}
+function _calcEditTotal(){return calcularPagamentosComJuros(editarPagamentos,editarSplit,_calcEditTotalBase()).total;}
+function atualizarEditarTotal(atualizarSplit=true){const t=_calcEditTotal();const el=document.getElementById("editarTotalPreview");if(el)el.textContent=`R$ ${fmt(t)}`;if(atualizarSplit&&editarPagamentos.length>1)renderEditSplit();}
 
 async function salvarEdicaoVenda(){
   if (!editarItens.length){mostrarToast("Adicione ao menos um item.","erro");return;}
-  const sub=_calcEditSubtotal(), desc=_calcEditDesconto(sub), total=Math.max(0,sub-desc)+editarFrete;
-  if (editarPagamentos.length>1){const soma=editarPagamentos.slice(0,-1).reduce((a,t)=>a+(parseFloat(editarSplit[t])||0),0);if(soma>total+.005){mostrarToast("A soma dos pagamentos ultrapassa o total.","erro");return;}}
-  const pagamentos=getSplitFinal(editarPagamentos,editarSplit,total);
+  const sub=_calcEditSubtotal(), desc=_calcEditDesconto(sub), totalBase=Math.max(0,sub-desc)+editarFrete;
+  if (editarPagamentos.length>1){const soma=editarPagamentos.slice(0,-1).reduce((a,t)=>a+(parseFloat(editarSplit[t])||0),0);if(soma>totalBase+.005){mostrarToast("A soma dos pagamentos ultrapassa o total.","erro");return;}}
+  const {pagamentos,total}=calcularPagamentosComJuros(editarPagamentos,editarSplit,totalBase);
   const v=historico[editarVendaIdx];
   const dadosAtualizados={...v,itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]};
   historico[editarVendaIdx]=dadosAtualizados;
@@ -2197,6 +2237,7 @@ let cupomCatalogo = { codigo: "", percentual: 0 };
 let cupomCatalogoAplicado = false;
 let freteGratisMinimoPublico = 0;
 let valorFretePublico = 0;
+let jurosCartaoPublico = 0;
 let arrastoCarrinhoCatalogo = null;
 let ignorarCliqueCarrinhoCatalogo = false;
 let carrinhoCatalogoHistoricoAtivo = false;
@@ -2259,7 +2300,7 @@ function atualizarResumoMinimizadoCatalogo() {
   const resumo = document.getElementById("catalogoCarrinhoMinimizado");
   if (!resumo) return;
   const quantidade = Object.values(carrinhoCatalogo).reduce((s, i) => s + i.quantidade, 0);
-  resumo.innerHTML = `${ic("cart")} ${quantidade} ite${quantidade === 1 ? "m" : "ns"} · R$ ${fmt(totalCatalogo())}`;
+  resumo.innerHTML = `${ic("cart")} ${quantidade} ite${quantidade === 1 ? "m" : "ns"} · R$ ${fmt(calcularPagamentosCatalogoComJuros().total)}`;
   resumo.setAttribute("aria-hidden", "false");
 }
 
@@ -2304,6 +2345,7 @@ async function iniciarModoCatalogo() {
     cupomCatalogo = { codigo: (loja.cupom_codigo || "").trim().toUpperCase(), percentual: Math.min(100, Math.max(0, parseFloat(loja.cupom_percentual) || 0)) };
     freteGratisMinimoPublico = Math.max(0, Number(loja.frete_minimo) || 0);
     valorFretePublico = Math.max(0, Number(loja.valor_frete) || 0);
+    jurosCartaoPublico = Math.min(100,Math.max(0,Number(loja.juros_cartao_percentual)||0));
     const ids = loja.catalogo_produtos || [];
     if (!ids.length) { document.getElementById("catalogoListaProdutos").innerHTML = `<p class="catalogo-vazio">Nenhum produto disponível no momento.</p>`; return; }
     const { data, error } = await supabase.from("catalogo_publico").select("*").eq("user_id", LOJA_CATALOGO_ID).in("id", ids);
@@ -2368,10 +2410,17 @@ function freteCatalogo() {
   return Math.max(0,subtotalCatalogo()-descontoCatalogo())>=freteGratisMinimoPublico ? 0 : valorFretePublico;
 }
 function totalCatalogo() { return Math.max(0, subtotalCatalogo() - descontoCatalogo()) + freteCatalogo(); }
+function calcularPagamentosCatalogoComJuros() {
+  const pagamentos=getSplitFinal(pagamentosCatalogo,splitCatalogo,totalCatalogo());
+  const juros=Math.round((pagamentos.cartao||0)*jurosCartaoPublico)/100;
+  if (juros>0) pagamentos.cartao+=juros;
+  return {pagamentos,juros,total:totalCatalogo()+juros};
+}
 function renderResumoValoresCatalogo() {
   const resumo=document.getElementById("catalogoResumoValores");
   if (!resumo) return;
   const subtotal=subtotalCatalogo(), desconto=descontoCatalogo(), frete=freteCatalogo();
+  const {juros,total}=calcularPagamentosCatalogoComJuros();
   const freteLinha=freteGratisMinimoPublico>0
     ?`<div class="catalogo-resumo-linha"><span>Frete${frete===0?" grátis":""}</span><span>${frete===0?"Grátis":`R$ ${fmt(frete)}`}</span></div>`
     :"";
@@ -2380,7 +2429,8 @@ function renderResumoValoresCatalogo() {
     ${desconto>0?`<div class="catalogo-resumo-linha catalogo-resumo-desconto"><span>Desconto</span><span>− R$ ${fmt(desconto)}</span></div>`:""}
     ${freteLinha}
     ${frete>0?`<small class="catalogo-frete-ajuda">Frete grátis a partir de R$ ${fmt(freteGratisMinimoPublico)} em produtos.</small>`:""}
-    <div class="catalogo-resumo-linha catalogo-resumo-total"><span>Total</span><span>R$ <span id="catalogoTotalValor">${fmt(totalCatalogo())}</span></span></div>`;
+    ${juros>0?`<div class="catalogo-resumo-linha"><span>Juros do cartão</span><span>R$ ${fmt(juros)}</span></div>`:""}
+    <div class="catalogo-resumo-linha catalogo-resumo-total"><span>Total</span><span>R$ <span id="catalogoTotalValor">${fmt(total)}</span></span></div>`;
 }
 
 function atualizarCupomCatalogo() {
@@ -2429,21 +2479,24 @@ function renderSplitPagamentoCatalogo() {
   const c = document.getElementById("catalogoPagamentoSplit"); if (!c) return;
   if (pagamentosCatalogo.length<=1) { c.classList.add("hidden"); c.innerHTML=""; splitCatalogo={}; return; }
   c.classList.remove("hidden");
+  const detalheJuros=pagamentosCatalogo.includes("cartao")&&jurosCartaoPublico>0?" base, antes dos juros":"";
   _renderSplitHTML(c, pagamentosCatalogo, splitCatalogo, totalCatalogo(), "onSplitInputCatalogo", "catSplitAviso");
+  if (detalheJuros) c.querySelector("p").textContent=`Dividir valor${detalheJuros} (R$ ${fmt(totalCatalogo())})`;
   c.insertAdjacentHTML("beforeend", '<div id="catSplitResumo" class="catalogo-split-resumo"></div>');
   atualizarResumoPagamentoCatalogo();
 }
 function atualizarResumoPagamentoCatalogo() {
   const resumo = document.getElementById("catSplitResumo"); if (!resumo) return;
-  const total = totalCatalogo();
-  const pagamentos = getSplitFinal(pagamentosCatalogo, splitCatalogo, total);
+  const {total,pagamentos,juros} = calcularPagamentosCatalogoComJuros();
   const soma = Object.values(pagamentos).reduce((valor, pagamento) => valor + pagamento, 0);
-  resumo.innerHTML = `<strong>Total do pedido: R$ ${fmt(total)}</strong><span>${pagamentosCatalogo.map(tipo => `${ICONE_PAGAMENTO_HTML[tipo]}: R$ ${fmt(pagamentos[tipo] || 0)}`).join(" + ")}</span><small>Soma dos pagamentos: R$ ${fmt(soma)}</small>`;
+  resumo.innerHTML = `<strong>Total do pedido: R$ ${fmt(total)}</strong><span>${pagamentosCatalogo.map(tipo => `${ICONE_PAGAMENTO_HTML[tipo]}: R$ ${fmt(pagamentos[tipo] || 0)}`).join(" + ")}</span>${juros>0?`<small>Juros do cartão: R$ ${fmt(juros)}</small>`:""}<small>Soma dos pagamentos: R$ ${fmt(soma)}</small>`;
 }
 function onSplitInputCatalogo(tipo) {
   splitCatalogo[tipo]=parseFloat(document.getElementById(`split-input-${tipo}`)?.value)||0;
   _atualizarResto(pagamentosCatalogo,splitCatalogo,totalCatalogo(),"catSplitAviso");
+  renderResumoValoresCatalogo();
   atualizarResumoPagamentoCatalogo();
+  if (document.getElementById("catalogoCarrinhoWrap")?.classList.contains("minimizado")) atualizarResumoMinimizadoCatalogo();
 }
 
 async function finalizarPedidoCatalogo() {
@@ -2457,7 +2510,12 @@ async function finalizarPedidoCatalogo() {
   const subtotal = subtotalCatalogo();
   const desconto = descontoCatalogo();
   const frete = freteCatalogo();
-  const pagamentosFinal = getSplitFinal(pagamentosCatalogo, splitCatalogo, total);
+  if (pagamentosCatalogo.length>1) {
+    const soma=pagamentosCatalogo.slice(0,-1).reduce((valor,tipo)=>valor+(parseFloat(splitCatalogo[tipo])||0),0);
+    if (soma>total+.005) { mostrarToast("A soma dos pagamentos ultrapassa o total.","erro"); return; }
+  }
+  const {pagamentos: pagamentosFinal, total: totalComJuros} = calcularPagamentosCatalogoComJuros();
+  const pagamentosParaRpc=getSplitFinal(pagamentosCatalogo,splitCatalogo,total);
   mostrarLoading("Enviando pedido...");
   const { error } = await supabase.rpc("criar_pedido_rt", {
     p_loja_user_id: LOJA_CATALOGO_ID,
@@ -2465,9 +2523,9 @@ async function finalizarPedidoCatalogo() {
     p_cliente_telefone: telefone,
     p_cliente_endereco: endereco,
     p_itens: itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.preco,fotoUrl:i.fotoUrl||""})),
-    p_total: total,
+    p_total: totalComJuros,
     p_pagamento: pagamentosCatalogo.join("+"),
-    p_pagamentos: pagamentosFinal,
+    p_pagamentos: pagamentosParaRpc,
     p_subtotal: subtotal,
     p_desconto: desconto,
   });
@@ -2482,7 +2540,8 @@ async function finalizarPedidoCatalogo() {
   const cupomTxt = cupomCatalogoAplicado ? `\nCupom: ${cupomCatalogo.codigo} (${cupomCatalogo.percentual}% de desconto)` : "";
   const descontoTxt=desconto>0?`\nDesconto: - R$ ${fmt(desconto)}`:"";
   const freteTxt=freteGratisMinimoPublico>0?`\nFrete: ${frete===0?"Grátis":`R$ ${fmt(frete)}`}`:"";
-  const msg = `Olá! Gostaria de fazer o seguinte pedido:\n\n${itensTxt}${cupomTxt}\nSubtotal: R$ ${fmt(subtotal)}${descontoTxt}${freteTxt}\n\n*Total: R$ ${fmt(total)}*\nForma de pagamento: ${pagsTxt}\n\nNome: ${nome}\nEndereço: ${endereco}`;
+  const jurosTxt=totalComJuros>total?`\nJuros do cartão: R$ ${fmt(totalComJuros-total)}`:"";
+  const msg = `Olá! Gostaria de fazer o seguinte pedido:\n\n${itensTxt}${cupomTxt}\nSubtotal: R$ ${fmt(subtotal)}${descontoTxt}${freteTxt}${jurosTxt}\n\n*Total: R$ ${fmt(totalComJuros)}*\nForma de pagamento: ${pagsTxt}\n\nNome: ${nome}\nEndereço: ${endereco}`;
   if (whatsappLojaPublico) window.location.href = `https://wa.me/${whatsappLojaPublico}?text=${encodeURIComponent(msg)}`;
   else mostrarToast("Pedido enviado! A loja não configurou um WhatsApp.");
 }
@@ -2522,6 +2581,7 @@ Object.assign(window, {
   // Configurações
   definirTema, trocarSenha, atualizarFotoPerfil, removerFotoPerfil,
   salvarNomeLoja, selecionarCorLoja, selecionarFonteLoja, atualizarPreviewLoja, salvarFreteLoja,
+  salvarJurosCartaoLoja,
   alternarFreteVenda,
   resetarOrdemMenu, salvarWhatsappLoja, salvarCupomLoja, atualizarCupomCatalogo,
   // Atendimento RT (admin)
@@ -2546,6 +2606,7 @@ function renderConfiguracoes() {
   const ip=document.getElementById("cupomPercentualLoja");if(ip)ip.value=lojaConfigAtual.cupom_percentual||"";
   const fm=document.getElementById("freteGratisMinimo");if(fm)fm.value=Number(lojaConfigAtual.frete_minimo)||"";
   const vf=document.getElementById("valorFreteLoja");if(vf)vf.value=Number(lojaConfigAtual.valor_frete)||"";
+  const jc=document.getElementById("jurosCartaoLoja");if(jc)jc.value=Number(lojaConfigAtual.juros_cartao_percentual)||"";
   renderLojaConfigUI();renderMenuOrderList();
 }
 

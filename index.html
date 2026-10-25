@@ -518,6 +518,14 @@
           </div>
           <span class="config-cupom-ajuda">No catálogo, o frete é calculado automaticamente. Nas vendas manuais, você decide se inclui o frete.</span>
         </div>
+        <div class="field-group" style="margin-bottom:14px">
+          <label>Juros para pagamento com cartão</label>
+          <div class="config-cupom-row">
+            <div class="config-cupom-percentual"><input type="number" id="jurosCartaoLoja" min="0" max="100" step="0.01" placeholder="0,00"><span>%</span></div>
+            <button class="btn-primary" onclick="salvarJurosCartaoLoja()">Salvar juros</button>
+          </div>
+          <span class="config-cupom-ajuda">O percentual é aplicado somente ao valor pago no cartão, inclusive em pagamentos divididos. Deixe zero para desativar.</span>
+        </div>
         <div class="loja-config-grid">
           <div>
             <p class="section-label" style="margin-bottom:10px">Cor do nome</p>

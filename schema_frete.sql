@@ -37,6 +37,10 @@ DECLARE
   valor_frete NUMERIC := 0;
   frete_calculado NUMERIC := 0;
   total_calculado NUMERIC := 0;
+  percentual_juros_cartao NUMERIC := 0;
+  valor_cartao NUMERIC := 0;
+  juros_cartao NUMERIC := 0;
+  pagamentos_calculados JSONB := COALESCE(p_pagamentos, '{}'::jsonb);
   itens_com_custo JSONB := '[]'::jsonb;
   item_json JSONB;
   produto_id UUID;
@@ -47,8 +51,9 @@ BEGIN
   END IF;
 
   SELECT COALESCE(NULLIF(loja_config->>'frete_minimo', '')::numeric, 0),
-         COALESCE(NULLIF(loja_config->>'valor_frete', '')::numeric, 0)
-  INTO minimo_frete, valor_frete
+         COALESCE(NULLIF(loja_config->>'valor_frete', '')::numeric, 0),
+         LEAST(100, GREATEST(0, COALESCE(NULLIF(loja_config->>'juros_cartao_percentual', '')::numeric, 0)))
+  INTO minimo_frete, valor_frete, percentual_juros_cartao
   FROM config WHERE user_id = p_loja_user_id;
 
   IF minimo_frete > 0 AND valor_frete > 0
@@ -56,6 +61,14 @@ BEGIN
     frete_calculado := valor_frete;
   END IF;
   total_calculado := GREATEST(0, COALESCE(p_subtotal, p_total, 0) - COALESCE(p_desconto, 0)) + frete_calculado;
+  IF jsonb_typeof(pagamentos_calculados) = 'object' AND percentual_juros_cartao > 0 THEN
+    valor_cartao := GREATEST(0, COALESCE(NULLIF(pagamentos_calculados->>'cartao', '')::numeric, 0));
+    juros_cartao := ROUND(valor_cartao * percentual_juros_cartao / 100, 2);
+    IF juros_cartao > 0 THEN
+      pagamentos_calculados := jsonb_set(pagamentos_calculados, '{cartao}', to_jsonb(valor_cartao + juros_cartao), true);
+      total_calculado := total_calculado + juros_cartao;
+    END IF;
+  END IF;
 
   telefone_normalizado := regexp_replace(COALESCE(p_cliente_telefone, ''), '\D', '', 'g');
   IF left(telefone_normalizado, 2) = '55' AND length(telefone_normalizado) IN (12, 13) THEN
@@ -135,7 +148,7 @@ BEGIN
     frete_calculado,
     total_calculado,
     COALESCE(NULLIF(p_pagamento, ''), 'dinheiro'),
-    COALESCE(p_pagamentos, '{}'::jsonb),
+    pagamentos_calculados,
     'novo'
   )
   RETURNING id INTO novo_id;
@@ -161,7 +174,8 @@ SELECT
   loja_config->>'cupom_codigo' AS cupom_codigo,
   loja_config->>'cupom_percentual' AS cupom_percentual,
   COALESCE(NULLIF(loja_config->>'frete_minimo', '')::numeric, 0) AS frete_minimo,
-  COALESCE(NULLIF(loja_config->>'valor_frete', '')::numeric, 0) AS valor_frete
+  COALESCE(NULLIF(loja_config->>'valor_frete', '')::numeric, 0) AS valor_frete,
+  COALESCE(NULLIF(loja_config->>'juros_cartao_percentual', '')::numeric, 0) AS juros_cartao_percentual
 FROM config;
 
 GRANT SELECT ON loja_publica TO anon;
