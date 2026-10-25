@@ -263,7 +263,7 @@ async function carregarDadosUsuario() {
 ───────────────────────────────────────── */
 
 // Produtos
-async function fbSalvarProduto(produto) {
+async function fbSalvarProduto(produto, { atualizarEstoque = false } = {}) {
   const uid = usuarioAtual.id;
   const payload = {
     user_id:     uid,
@@ -272,20 +272,34 @@ async function fbSalvarProduto(produto) {
     nome:        produto.nome,
     preco:       produto.preco,
     custo:       Number(produto.custo) || 0,
-    estoque:     Math.max(0, Math.floor(Number(produto.estoque) || 0)),
     categoria:   produto.categoria || "",
     foto_key:    produto.fotoKey || "",
     foto_url:    produto.fotoUrl || "",
   };
   if (produto.firestoreId) {
-    const { error } = await supabase.from("produtos").update(payload).eq("id", produto.firestoreId);
+    if (atualizarEstoque) payload.estoque = Math.max(0, Math.floor(Number(produto.estoque) || 0));
+    const { data, error } = await supabase.from("produtos").update(payload).eq("id", produto.firestoreId).select("estoque").single();
     if (error) throw new Error("Erro ao atualizar produto: " + error.message);
+    produto.estoque = Number(data.estoque) || 0;
     return produto.firestoreId;
   } else {
+    payload.estoque = Math.max(0, Math.floor(Number(produto.estoque) || 0));
     const { data, error } = await supabase.from("produtos").insert(payload).select().single();
     if (error) throw new Error("Erro ao inserir produto: " + error.message);
     return data.id;
   }
+}
+async function fbAjustarEstoque(ajustes) {
+  if (!ajustes.length) return;
+  const { data, error } = await supabase.rpc("ajustar_estoque_produtos", { p_ajustes: ajustes });
+  if (error) throw new Error("Erro ao atualizar estoque: " + error.message);
+  if (!Array.isArray(data) || data.length !== ajustes.length) {
+    throw new Error("O banco não confirmou a atualização de todo o estoque.");
+  }
+  data.forEach(item => {
+    const produto = produtos.find(p => p.firestoreId === item.produto_id);
+    if (produto) produto.estoque = Number(item.estoque) || 0;
+  });
 }
 async function fbDeletarProduto(firestoreId) {
   try {
@@ -327,20 +341,17 @@ async function fbSalvarVenda(venda) {
   } catch(e) { mostrarToast("Erro ao salvar venda.","erro"); console.error(e); return null; }
 }
 async function fbAtualizarVenda(firestoreId, dados) {
-  try {
-    // Mapeia campos do padrão antigo para os nomes das colunas do Supabase
-    const payload = {};
-    if (dados.cancelada  !== undefined) payload.cancelada    = dados.cancelada;
-    if (dados.itens      !== undefined) payload.itens        = dados.itens;
-    if (dados.subtotal   !== undefined) payload.subtotal     = dados.subtotal;
-    if (dados.desconto   !== undefined) payload.desconto     = dados.desconto;
-    if (dados.frete      !== undefined) payload.frete        = dados.frete;
-    if (dados.total      !== undefined) payload.total        = dados.total;
-    if (dados.pagamento  !== undefined) payload.pagamento    = dados.pagamento;
-    if (dados.pagamentos !== undefined) payload.pagamentos   = dados.pagamentos;
-    const { error } = await supabase.from("historico").update(payload).eq("id", firestoreId);
-    if (error) throw error;
-  } catch(e) { mostrarToast("Erro ao atualizar venda.","erro"); }
+  const payload = {};
+  if (dados.cancelada  !== undefined) payload.cancelada    = dados.cancelada;
+  if (dados.itens      !== undefined) payload.itens        = dados.itens;
+  if (dados.subtotal   !== undefined) payload.subtotal     = dados.subtotal;
+  if (dados.desconto   !== undefined) payload.desconto     = dados.desconto;
+  if (dados.frete      !== undefined) payload.frete        = dados.frete;
+  if (dados.total      !== undefined) payload.total        = dados.total;
+  if (dados.pagamento  !== undefined) payload.pagamento    = dados.pagamento;
+  if (dados.pagamentos !== undefined) payload.pagamentos   = dados.pagamentos;
+  const { error } = await supabase.from("historico").update(payload).eq("id", firestoreId);
+  if (error) throw new Error("Erro ao atualizar venda: " + error.message);
 }
 
 // Clientes
@@ -1283,8 +1294,13 @@ function alterarQtd(id,delta){const nova=Math.max(0,(carrinho[id]||0)+delta);if(
 function definirQtd(id,val){const nova=Math.max(0,Math.floor(Number(val)));if(nova===0)delete carrinho[id];else carrinho[id]=nova;atualizarTotal();renderProdutos();}
 
 async function salvarProduto() {
-  const nome=document.getElementById("nomeProduto").value.trim(), preco=Number(document.getElementById("precoProduto").value), custoInput=document.getElementById("custoProduto").value, estoqueInput=document.getElementById("estoqueProduto").value, custo=custoInput===""?0:Math.max(0,Number(custoInput)), estoque=estoqueInput===""?0:Math.max(0,Math.floor(Number(estoqueInput))), cat=document.getElementById("categoriaProduto").value.trim(), fi=document.getElementById("fotoProduto");
+  const nome=document.getElementById("nomeProduto").value.trim(), preco=Number(document.getElementById("precoProduto").value), custoInput=document.getElementById("custoProduto").value, estoqueInput=document.getElementById("estoqueProduto").value, custo=custoInput===""?0:Math.max(0,Number(custoInput)), cat=document.getElementById("categoriaProduto").value.trim(), fi=document.getElementById("fotoProduto");
   if (!nome||isNaN(preco)||preco<=0){mostrarToast("Preencha nome e preço válidos.","erro");return;}
+  const idx = produtos.findIndex(p => p.id === editandoId);
+  const estoqueAnterior = idx !== -1 ? Number(produtos[idx].estoque) || 0 : 0;
+  const estoque = estoqueInput === ""
+    ? estoqueAnterior
+    : Math.max(0, Math.floor(Number(estoqueInput) || 0));
   mostrarLoading("Salvando produto...");
   try {
     // Upload de foto para o Supabase Storage (sincroniza entre dispositivos)
@@ -1300,18 +1316,17 @@ async function salvarProduto() {
         console.warn("Erro no upload da foto:", upErr.message);
       }
     }
-    const idx = produtos.findIndex(p => p.id === editandoId);
     if (editandoId !== null && idx !== -1) {
       produtos[idx].nome = nome; produtos[idx].preco = preco; produtos[idx].custo = custo; produtos[idx].estoque = estoque; produtos[idx].categoria = cat;
       if (fotoUrl) produtos[idx].fotoUrl = fotoUrl;
-      await fbSalvarProduto(produtos[idx]);
+      await fbSalvarProduto(produtos[idx], { atualizarEstoque: estoqueInput !== "" && estoque !== estoqueAnterior });
       editandoId = null;
     } else {
       const novo = { id: Date.now(), skuId: proximoSkuId(), nome, preco, custo, estoque, categoria: cat, fotoUrl: fotoUrl || "", fotoKey: "" };
       const fid = await fbSalvarProduto(novo);
       if (fid) { novo.firestoreId = fid; produtos.push(novo); }
     }
-    limparCampos(); renderProdutosAdmin(); atualizarSugestoesCategorias();
+    limparCampos(); renderProdutosAdmin(); renderProdutos(); renderEstoque(); renderDashboard(); atualizarSugestoesCategorias();
     document.getElementById("adminFormLabel").textContent = "Novo produto";
     document.getElementById("btnCancelarEdicao").style.display = "none";
     document.getElementById("adminFormCard")?.classList.add("hidden");
@@ -1368,9 +1383,25 @@ async function finalizarPedido() {
     : null;
   const clienteNome=clienteObj?.nome||"";
   const venda={id:Date.now(),itens,subtotal:sub,desconto:desc,frete,total,pagamentos,pagamento:pagamentosSelecionados[0],data:hojeStr(),hora:agoraHora(),cancelada:false,clienteId:clienteObj?.firestoreId||null,clienteNome,clienteTelefone:clienteObj?.telefone||"",clienteEndereco:clienteObj?.endereco||""};
-  const fid = await fbSalvarVenda(venda);
-  if (fid) { venda.firestoreId=fid; historico.push(venda); }
-  await Promise.all(itensIds.map(async id=>{const p=produtos.find(prod=>prod.id===Number(id));p.estoque=Math.max(0,(p.estoque||0)-carrinho[id]);await fbSalvarProduto(p);}));
+  const ajustesEstoque = itensIds.map(id => {
+    const produto = produtos.find(p => p.id === Number(id));
+    return { produto_id: produto.firestoreId, delta: -carrinho[id] };
+  });
+  try {
+    await fbAjustarEstoque(ajustesEstoque);
+    const fid = await fbSalvarVenda(venda);
+    if (!fid) {
+      await fbAjustarEstoque(ajustesEstoque.map(item => ({ ...item, delta: -item.delta })));
+      mostrarToast("Venda não registrada; o estoque foi restaurado.", "erro");
+      return;
+    }
+    venda.firestoreId=fid;
+    historico.push(venda);
+  } catch(e) {
+    console.error("Erro ao finalizar venda:", e);
+    mostrarToast("Não foi possível concluir a venda: " + e.message, "erro");
+    return;
+  }
 
   // Reset
   carrinho={}; pagamentosSelecionados=["dinheiro"]; splitPagamento={}; tipoDesconto="pct";
@@ -1393,6 +1424,8 @@ async function finalizarPedido() {
   document.getElementById("sugestoesClientesVenda")?.classList.add("hidden");
   atualizarSugestoesClientesVenda();
   renderProdutos();
+  renderEstoque();
+  renderDashboard();
   mostrarComprovante(venda);
 }
 
@@ -1603,10 +1636,9 @@ function renderHistorico() {
 
 function abrirComprovanteHistorico(index){mostrarComprovante(historico[index]);}
 
-async function reverterEstoqueVenda(venda) {
-  if (!venda || !Array.isArray(venda.itens)) return;
-
-  for (const item of venda.itens) {
+function ajustesEstoqueVenda(venda, sinal = 1) {
+  const quantidades = new Map();
+  for (const item of Array.isArray(venda?.itens) ? venda.itens : []) {
     if (!item || typeof item !== "object") continue;
 
     const quantidade = Math.max(0, Number(item.quantidade) || 0);
@@ -1620,9 +1652,13 @@ async function reverterEstoqueVenda(venda) {
 
     if (!produto) continue;
 
-    produto.estoque = Math.max(0, (Number(produto.estoque) || 0) + quantidade);
-    await fbSalvarProduto(produto);
+    quantidades.set(produto.firestoreId, (quantidades.get(produto.firestoreId) || 0) + quantidade);
   }
+  return [...quantidades].map(([produto_id, quantidade]) => ({ produto_id, delta: quantidade * sinal }));
+}
+
+async function reverterEstoqueVenda(venda) {
+  await fbAjustarEstoque(ajustesEstoqueVenda(venda));
 }
 
 async function cancelarVenda(index){
@@ -1631,10 +1667,22 @@ async function cancelarVenda(index){
 
   const ok=await confirmar("Deseja invalidar esta venda?");if(!ok)return;
 
-  venda.cancelada=true;
-  await reverterEstoqueVenda(venda);
-
-  if (venda.firestoreId) await fbAtualizarVenda(venda.firestoreId,{cancelada:true});
+  try {
+    await reverterEstoqueVenda(venda);
+    if (venda.firestoreId) {
+      try {
+        await fbAtualizarVenda(venda.firestoreId,{cancelada:true});
+      } catch(e) {
+        await fbAjustarEstoque(ajustesEstoqueVenda(venda, -1));
+        throw e;
+      }
+    }
+    venda.cancelada=true;
+  } catch(e) {
+    console.error("Erro ao cancelar venda:", e);
+    mostrarToast("Não foi possível cancelar a venda: " + e.message, "erro");
+    return;
+  }
 
   renderHistorico();
   renderProdutos();
@@ -1712,8 +1760,14 @@ async function salvarEdicaoVenda(){
   const {pagamentos,total}=calcularPagamentosComJuros(editarPagamentos,editarSplit,totalBase);
   const v=historico[editarVendaIdx];
   const dadosAtualizados={...v,itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]};
+  try {
+    if (v.firestoreId) await fbAtualizarVenda(v.firestoreId,{itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]});
+  } catch(e) {
+    console.error("Erro ao salvar edição da venda:", e);
+    mostrarToast(e.message, "erro");
+    return;
+  }
   historico[editarVendaIdx]=dadosAtualizados;
-  if (v.firestoreId) await fbAtualizarVenda(v.firestoreId,{itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]});
   fecharEditarVenda();renderHistorico();mostrarToast("Venda atualizada!");
 }
 
@@ -2164,6 +2218,15 @@ function subscribeRealtimeAtendimento() {
       if (document.getElementById("page-historico")?.classList.contains("active")) renderHistorico();
       const card = document.getElementById(`pedidoRT-${payload.new.id}`);
       if (card) card.outerHTML = renderPedidoRTCard(payload.new);
+    })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "produtos", filter: `user_id=eq.${usuarioAtual.id}` }, (payload) => {
+      const produto = produtos.find(p => p.firestoreId === payload.new.id);
+      if (!produto) return;
+      produto.estoque = Number(payload.new.estoque) || 0;
+      renderProdutos();
+      renderProdutosAdmin();
+      renderEstoque();
+      renderDashboard();
     })
     .subscribe(status => {
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("Realtime de pedidos indisponível; usando sincronização automática.", status);
