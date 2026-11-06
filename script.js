@@ -205,6 +205,7 @@ async function carregarDadosUsuario() {
       custo:       Number(p.custo) || 0,
       estoque:     Number(p.estoque) || 0,
       categoria:   p.categoria || "",
+      isentoFrete: p.isento_frete === true,
       fotoKey:     p.foto_key || "",
       fotoUrl:     p.foto_url || "",
     }));
@@ -273,14 +274,16 @@ async function fbSalvarProduto(produto, { atualizarEstoque = false } = {}) {
     preco:       produto.preco,
     custo:       Number(produto.custo) || 0,
     categoria:   produto.categoria || "",
+    isento_frete: produto.isentoFrete === true,
     foto_key:    produto.fotoKey || "",
     foto_url:    produto.fotoUrl || "",
   };
   if (produto.firestoreId) {
     if (atualizarEstoque) payload.estoque = Math.max(0, Math.floor(Number(produto.estoque) || 0));
-    const { data, error } = await supabase.from("produtos").update(payload).eq("id", produto.firestoreId).select("estoque").single();
+    const { data, error } = await supabase.from("produtos").update(payload).eq("id", produto.firestoreId).select("estoque,isento_frete").single();
     if (error) throw new Error("Erro ao atualizar produto: " + error.message);
     produto.estoque = Number(data.estoque) || 0;
+    produto.isentoFrete = data.isento_frete === true;
     return produto.firestoreId;
   } else {
     payload.estoque = Math.max(0, Math.floor(Number(produto.estoque) || 0));
@@ -1091,10 +1094,37 @@ function calcularTotalFinal() {
   return calcularPagamentosComJuros(pagamentosSelecionados,splitPagamento,totalBase).total;
 }
 
+function atualizarAcaoResumoMobile() {
+  const painel=document.querySelector("#page-vendas .vendas-col-right");
+  const acao=document.getElementById("mobileResumoAcao");
+  if (!painel||!acao) return;
+  const quantidade=Object.values(carrinho).reduce((total,qtd)=>total+qtd,0);
+  acao.textContent=painel.classList.contains("resumo-aberto")
+    ?"Fechar pedido"
+    :`${quantidade} ${quantidade===1?"item":"itens"} · Ver pedido`;
+}
+function toggleResumoMobile() {
+  const painel=document.querySelector("#page-vendas .vendas-col-right");
+  const botao=document.getElementById("mobileResumoToggle");
+  if (!painel?.classList.contains("com-itens")||!botao) return;
+  const aberto=painel.classList.toggle("resumo-aberto");
+  botao.setAttribute("aria-expanded",String(aberto));
+  atualizarAcaoResumoMobile();
+}
+function toggleConfigSection(botao) {
+  const painelId=botao?.getAttribute("aria-controls");
+  const painel=painelId?document.getElementById(painelId):null;
+  const item=botao?.closest(".config-accordion-item, .config-card-accordion");
+  if (!painel||!item) return;
+  const aberto=item.classList.toggle("aberto");
+  botao.setAttribute("aria-expanded",String(aberto));
+}
+
 function atualizarTotal(atualizarSplit=true) {
   const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), totalBase=Math.max(0,sub-desc)+frete;
   const {juros,total}=calcularPagamentosComJuros(pagamentosSelecionados,splitPagamento,totalBase);
   const el=document.getElementById("total"); if (el) el.innerText=fmt(total);
+  const mobileTotal=document.getElementById("mobileResumoTotal"); if (mobileTotal) mobileTotal.textContent=`R$ ${fmt(total)}`;
   const prev=document.getElementById("descontoPreview");
   if (prev) prev.textContent=desc>0?`Subtotal R$ ${fmt(sub)}  –  Desconto R$ ${fmt(desc)}${frete>0?`  +  Frete R$ ${fmt(frete)}`:""}${juros>0?`  +  Juros cartão R$ ${fmt(juros)}`:""}  =  R$ ${fmt(total)}`:frete>0||juros>0?`${frete>0?`Frete R$ ${fmt(frete)} incluído no total.`:""}${juros>0?`${frete>0?" ":""}Juros do cartão: R$ ${fmt(juros)}.`:""}`:"";
   const freteResumo=document.getElementById("freteVendaResumo");
@@ -1115,8 +1145,16 @@ function atualizarTotal(atualizarSplit=true) {
 function renderCarrinho() {
   const card=document.getElementById("carrinhoCard"), itensEl=document.getElementById("carrinhoItens"), footerEl=document.getElementById("carrinhoFooter");
   if (!card||!itensEl||!footerEl) return;
+  const painel=document.querySelector("#page-vendas .vendas-col-right"), botaoResumo=document.getElementById("mobileResumoToggle");
   const itensCarrinho=Object.entries(carrinho).filter(([,q])=>q>0);
-  if (itensCarrinho.length===0) { card.style.display="none"; return; }
+  if (itensCarrinho.length===0) {
+    card.style.display="none";
+    painel?.classList.remove("com-itens","resumo-aberto");
+    botaoResumo?.setAttribute("aria-expanded","false");
+    atualizarAcaoResumoMobile();
+    return;
+  }
+  painel?.classList.add("com-itens");
   card.style.display="block";
   const sub=calcularSubtotal(), desc=calcularDesconto(sub), frete=freteAtualVenda(sub,desc), totalBase=Math.max(0,sub-desc)+frete;
   const {juros,total:tot}=calcularPagamentosComJuros(pagamentosSelecionados,splitPagamento,totalBase);
@@ -1139,6 +1177,8 @@ function renderCarrinho() {
     ${frete>0?`<div class="carrinho-subtotal-row"><span>Frete</span><span class="mono">R$ ${fmt(frete)}</span></div>`:""}
     ${juros>0?`<div class="carrinho-subtotal-row"><span>Juros do cartão</span><span class="mono">R$ ${fmt(juros)}</span></div>`:""}
     <div class="carrinho-subtotal-row total-row"><span>Total</span><span class="mono green">R$ ${fmt(tot)}</span></div>`;
+  const mobileTotal=document.getElementById("mobileResumoTotal"); if (mobileTotal) mobileTotal.textContent=`R$ ${fmt(tot)}`;
+  atualizarAcaoResumoMobile();
 }
 
 function removerDoCarrinho(id) { delete carrinho[id]; atualizarTotal(); renderProdutos(); }
@@ -1283,7 +1323,8 @@ function renderProdutosAdmin() {
     const imgSrcA = prod.fotoUrl || prod._fotoCache || "";
     const imgTag = imgSrcA ? `<img src="${imgSrcA}" alt="${prod.nome}">` : (prod.fotoKey ? `<img src="" alt="${prod.nome}" data-foto-key="${prod.fotoKey}">` : "");
     const card=document.createElement("div");card.className="card-produto";
-    card.innerHTML=`${imgTag}<span class="prod-sku">#${String(prod.skuId).padStart(4,"0")}</span>${catTag}<p class="prod-nome">${prod.nome}</p><p class="prod-preco">R$ ${fmt(prod.preco)}</p><div class="prod-meta"><span>Custo: R$ ${fmt(prod.custo||0)}</span><span>Estoque: ${prod.estoque||0}</span></div>
+    const freteTag=prod.isentoFrete?`<span class="prod-categoria">Isento de frete</span>`:"";
+    card.innerHTML=`${imgTag}<span class="prod-sku">#${String(prod.skuId).padStart(4,"0")}</span>${catTag}${freteTag}<p class="prod-nome">${prod.nome}</p><p class="prod-preco">R$ ${fmt(prod.preco)}</p><div class="prod-meta"><span>Custo: R$ ${fmt(prod.custo||0)}</span><span>Estoque: ${prod.estoque||0}</span></div>
       <div class="acoes-admin"><button class="btn-sm btn-sm-edit" onclick="editarProduto(${prod.id})">${ic("edit")} Editar</button><button class="btn-sm btn-sm-del" onclick="excluirProduto(${prod.id})">${ic("trash")} Excluir</button></div>`;
     lista.appendChild(card);
     if (!prod.fotoUrl && prod.fotoKey){carregarImagem(prod.fotoKey).then(b64=>{if(b64){prod._fotoCache=b64;lista.querySelectorAll(`img[data-foto-key="${prod.fotoKey}"]`).forEach(img=>img.src=b64);}});}
@@ -1294,7 +1335,7 @@ function alterarQtd(id,delta){const nova=Math.max(0,(carrinho[id]||0)+delta);if(
 function definirQtd(id,val){const nova=Math.max(0,Math.floor(Number(val)));if(nova===0)delete carrinho[id];else carrinho[id]=nova;atualizarTotal();renderProdutos();}
 
 async function salvarProduto() {
-  const nome=document.getElementById("nomeProduto").value.trim(), preco=Number(document.getElementById("precoProduto").value), custoInput=document.getElementById("custoProduto").value, estoqueInput=document.getElementById("estoqueProduto").value, custo=custoInput===""?0:Math.max(0,Number(custoInput)), cat=document.getElementById("categoriaProduto").value.trim(), fi=document.getElementById("fotoProduto");
+  const nome=document.getElementById("nomeProduto").value.trim(), preco=Number(document.getElementById("precoProduto").value), custoInput=document.getElementById("custoProduto").value, estoqueInput=document.getElementById("estoqueProduto").value, custo=custoInput===""?0:Math.max(0,Number(custoInput)), cat=document.getElementById("categoriaProduto").value.trim(), isentoFrete=document.getElementById("produtoIsentoFrete").checked, fi=document.getElementById("fotoProduto");
   if (!nome||isNaN(preco)||preco<=0){mostrarToast("Preencha nome e preço válidos.","erro");return;}
   const idx = produtos.findIndex(p => p.id === editandoId);
   const estoqueAnterior = idx !== -1 ? Number(produtos[idx].estoque) || 0 : 0;
@@ -1317,12 +1358,12 @@ async function salvarProduto() {
       }
     }
     if (editandoId !== null && idx !== -1) {
-      produtos[idx].nome = nome; produtos[idx].preco = preco; produtos[idx].custo = custo; produtos[idx].estoque = estoque; produtos[idx].categoria = cat;
+      produtos[idx].nome = nome; produtos[idx].preco = preco; produtos[idx].custo = custo; produtos[idx].estoque = estoque; produtos[idx].categoria = cat; produtos[idx].isentoFrete = isentoFrete;
       if (fotoUrl) produtos[idx].fotoUrl = fotoUrl;
       await fbSalvarProduto(produtos[idx], { atualizarEstoque: estoqueInput !== "" && estoque !== estoqueAnterior });
       editandoId = null;
     } else {
-      const novo = { id: Date.now(), skuId: proximoSkuId(), nome, preco, custo, estoque, categoria: cat, fotoUrl: fotoUrl || "", fotoKey: "" };
+      const novo = { id: Date.now(), skuId: proximoSkuId(), nome, preco, custo, estoque, categoria: cat, isentoFrete, fotoUrl: fotoUrl || "", fotoKey: "" };
       const fid = await fbSalvarProduto(novo);
       if (fid) { novo.firestoreId = fid; produtos.push(novo); }
     }
@@ -1342,7 +1383,7 @@ async function salvarProduto() {
 function editarProduto(id){
   const p=produtos.find(p=>p.id===id);if(!p)return;
   abrirNovoProduto();
-  document.getElementById("nomeProduto").value=p.nome; document.getElementById("precoProduto").value=p.preco; document.getElementById("custoProduto").value=p.custo||""; document.getElementById("estoqueProduto").value=p.estoque||0; document.getElementById("categoriaProduto").value=p.categoria||"";
+  document.getElementById("nomeProduto").value=p.nome; document.getElementById("precoProduto").value=p.preco; document.getElementById("custoProduto").value=p.custo||""; document.getElementById("estoqueProduto").value=p.estoque||0; document.getElementById("categoriaProduto").value=p.categoria||""; document.getElementById("produtoIsentoFrete").checked=p.isentoFrete===true;
   if(p.fotoUrl){const pw=document.getElementById("fotoPrevisualizacao"),pi=document.getElementById("fotoPreviewImg"),lbl=document.getElementById("fotoNomeArquivo");if(pw&&pi){pi.src=p.fotoUrl;pw.style.display="block";}if(lbl)lbl.textContent="Foto atual";}
   else if(p.fotoKey){carregarImagem(p.fotoKey).then(b64=>{if(b64){const pw=document.getElementById("fotoPrevisualizacao"),pi=document.getElementById("fotoPreviewImg"),lbl=document.getElementById("fotoNomeArquivo");if(pw&&pi){pi.src=b64;pw.style.display="block";}if(lbl)lbl.textContent="Foto atual";}});}
   document.getElementById("adminFormLabel").textContent=`Editando: ${p.nome}`;
@@ -1360,7 +1401,7 @@ async function excluirProduto(id){
   produtos=produtos.filter(p=>p.id!==id); delete carrinho[id];
   atualizarTotal(); renderProdutosAdmin(); mostrarToast("Produto excluído.");
 }
-function limparCampos(){document.getElementById("nomeProduto").value="";document.getElementById("precoProduto").value="";document.getElementById("custoProduto").value="";document.getElementById("estoqueProduto").value="";document.getElementById("categoriaProduto").value="";removerFotoProduto();}
+function limparCampos(){document.getElementById("nomeProduto").value="";document.getElementById("precoProduto").value="";document.getElementById("custoProduto").value="";document.getElementById("estoqueProduto").value="";document.getElementById("categoriaProduto").value="";document.getElementById("produtoIsentoFrete").checked=false;removerFotoProduto();}
 
 /* ─────────────────────────────────────────
    FINALIZAR PEDIDO
@@ -2442,6 +2483,7 @@ function renderCatalogoProdutosPublico() {
   lista.innerHTML = catalogoProdutosPublicos.map(p => `
     <div class="card-produto catalogo-produto-card">
       ${p.foto_url?`<img src="${p.foto_url}" alt="">`:""}
+      ${p.isento_frete?`<span class="prod-categoria">Isento de frete</span>`:""}
       <p class="prod-nome">${p.nome}</p>
       <p class="prod-preco">R$ ${fmt(p.preco)}</p>
       ${(Number(p.estoque)||0) <= 0 ? `<p class="catalogo-sem-estoque">Sem estoque</p>` : `<p class="catalogo-estoque">Disponível</p>`}
@@ -2461,16 +2503,24 @@ function alterarQtdCatalogo(id, delta) {
   const nova = Math.min(estoque, Math.max(0, atual+delta));
   if (delta > 0 && nova === atual && estoque > 0) { mostrarToast("Quantidade maior que o estoque disponivel.", "erro"); return; }
   if (nova===0) delete carrinhoCatalogo[id];
-  else carrinhoCatalogo[id] = { produtoId:p.id, nome:p.nome, preco:p.preco, quantidade:nova, fotoUrl:p.foto_url||"" };
+  else carrinhoCatalogo[id] = { produtoId:p.id, nome:p.nome, preco:p.preco, quantidade:nova, isentoFrete:p.isento_frete===true, fotoUrl:p.foto_url||"" };
   const badge = document.getElementById(`catQtd-${id}`); if (badge) badge.textContent = nova;
   renderCarrinhoCatalogo();
 }
 
 function subtotalCatalogo() { return Object.values(carrinhoCatalogo).reduce((s,i)=>s+i.preco*i.quantidade,0); }
 function descontoCatalogo() { return cupomCatalogoAplicado ? subtotalCatalogo() * (cupomCatalogo.percentual / 100) : 0; }
+function subtotalElegivelFreteCatalogo() {
+  const subtotal=subtotalCatalogo();
+  if (subtotal<=0) return 0;
+  const elegivel=Object.values(carrinhoCatalogo).reduce((s,i)=>s+(i.isentoFrete?0:i.preco*i.quantidade),0);
+  return Math.round(Math.max(0,elegivel-descontoCatalogo()*(elegivel/subtotal))*100)/100;
+}
 function freteCatalogo() {
   if (freteGratisMinimoPublico<=0 || valorFretePublico<=0) return 0;
-  return Math.max(0,subtotalCatalogo()-descontoCatalogo())>=freteGratisMinimoPublico ? 0 : valorFretePublico;
+  const elegivel=subtotalElegivelFreteCatalogo();
+  if (elegivel<=0) return 0;
+  return elegivel>=freteGratisMinimoPublico ? 0 : valorFretePublico;
 }
 function totalCatalogo() { return Math.max(0, subtotalCatalogo() - descontoCatalogo()) + freteCatalogo(); }
 function calcularPagamentosCatalogoComJuros() {
@@ -2484,14 +2534,15 @@ function renderResumoValoresCatalogo() {
   if (!resumo) return;
   const subtotal=subtotalCatalogo(), desconto=descontoCatalogo(), frete=freteCatalogo();
   const {juros,total}=calcularPagamentosCatalogoComJuros();
+  const freteIsento=subtotalElegivelFreteCatalogo()<=0;
   const freteLinha=freteGratisMinimoPublico>0
-    ?`<div class="catalogo-resumo-linha"><span>Frete${frete===0?" grátis":""}</span><span>${frete===0?"Grátis":`R$ ${fmt(frete)}`}</span></div>`
+    ?`<div class="catalogo-resumo-linha"><span>Frete${frete===0?(freteIsento?" isento":" grátis"):""}</span><span>${frete===0?(freteIsento?"Isento":"Grátis"):`R$ ${fmt(frete)}`}</span></div>`
     :"";
   resumo.innerHTML=`
     <div class="catalogo-resumo-linha"><span>Subtotal</span><span>R$ ${fmt(subtotal)}</span></div>
     ${desconto>0?`<div class="catalogo-resumo-linha catalogo-resumo-desconto"><span>Desconto</span><span>− R$ ${fmt(desconto)}</span></div>`:""}
     ${freteLinha}
-    ${frete>0?`<small class="catalogo-frete-ajuda">Frete grátis a partir de R$ ${fmt(freteGratisMinimoPublico)} em produtos.</small>`:""}
+    ${frete>0?`<small class="catalogo-frete-ajuda">Frete grátis a partir de R$ ${fmt(freteGratisMinimoPublico)} em produtos sujeitos à política de frete.</small>`:""}
     ${juros>0?`<div class="catalogo-resumo-linha"><span>Juros do cartão</span><span>R$ ${fmt(juros)}</span></div>`:""}
     <div class="catalogo-resumo-linha catalogo-resumo-total"><span>Total</span><span>R$ <span id="catalogoTotalValor">${fmt(total)}</span></span></div>`;
 }
@@ -2619,6 +2670,7 @@ Object.assign(window, {
   navegarPara,
   // Vendas
   togglePagamento, onSplitInput, setTipoDesconto, finalizarPedido, abrirModalNovoCliente, fecharModalNovoCliente, salvarClienteModal, abrirComprovanteRT,
+  toggleResumoMobile, toggleConfigSection,
   limparCarrinho, removerDoCarrinho, alterarQtd, definirQtd,
   selecionarCategoria, renderProdutos, atualizarTotal,
   // Produtos

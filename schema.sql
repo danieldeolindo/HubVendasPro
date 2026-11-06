@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS produtos (
   custo         NUMERIC DEFAULT 0,
   estoque       INTEGER DEFAULT 0,
   categoria     TEXT    DEFAULT '',
+  isento_frete  BOOLEAN NOT NULL DEFAULT FALSE,
   foto_key      TEXT    DEFAULT '',  -- chave do IndexedDB (mantida para compatibilidade)
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );

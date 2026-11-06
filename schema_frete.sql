@@ -4,10 +4,18 @@
 -- de Atendimento RT / histórico de clientes.
 -- =====================================================
 
+ALTER TABLE produtos ADD COLUMN IF NOT EXISTS isento_frete BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE historico ADD COLUMN IF NOT EXISTS frete NUMERIC DEFAULT 0;
 ALTER TABLE pedidos_rt ADD COLUMN IF NOT EXISTS subtotal NUMERIC DEFAULT 0;
 ALTER TABLE pedidos_rt ADD COLUMN IF NOT EXISTS desconto NUMERIC DEFAULT 0;
 ALTER TABLE pedidos_rt ADD COLUMN IF NOT EXISTS frete NUMERIC DEFAULT 0;
+
+CREATE OR REPLACE VIEW catalogo_publico AS
+SELECT id, user_id, nome, preco, categoria, foto_url, estoque, isento_frete
+FROM produtos;
+
+GRANT SELECT ON catalogo_publico TO anon;
+GRANT SELECT ON catalogo_publico TO authenticated;
 
 -- Remove a versão anterior para evitar ambiguidade com os parâmetros opcionais.
 DROP FUNCTION IF EXISTS public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB);
@@ -45,6 +53,12 @@ DECLARE
   item_json JSONB;
   produto_id UUID;
   custo_produto NUMERIC;
+  preco_produto NUMERIC;
+  quantidade_item INTEGER;
+  isento_frete_produto BOOLEAN;
+  subtotal_itens_calculado NUMERIC := 0;
+  subtotal_elegivel_frete NUMERIC := 0;
+  desconto_elegivel_frete NUMERIC := 0;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM config WHERE user_id = p_loja_user_id) THEN
     RAISE EXCEPTION 'Loja não encontrada';
@@ -55,20 +69,6 @@ BEGIN
          LEAST(100, GREATEST(0, COALESCE(NULLIF(loja_config->>'juros_cartao_percentual', '')::numeric, 0)))
   INTO minimo_frete, valor_frete, percentual_juros_cartao
   FROM config WHERE user_id = p_loja_user_id;
-
-  IF minimo_frete > 0 AND valor_frete > 0
-     AND GREATEST(0, COALESCE(p_subtotal, p_total, 0) - COALESCE(p_desconto, 0)) < minimo_frete THEN
-    frete_calculado := valor_frete;
-  END IF;
-  total_calculado := GREATEST(0, COALESCE(p_subtotal, p_total, 0) - COALESCE(p_desconto, 0)) + frete_calculado;
-  IF jsonb_typeof(pagamentos_calculados) = 'object' AND percentual_juros_cartao > 0 THEN
-    valor_cartao := GREATEST(0, COALESCE(NULLIF(pagamentos_calculados->>'cartao', '')::numeric, 0));
-    juros_cartao := ROUND(valor_cartao * percentual_juros_cartao / 100, 2);
-    IF juros_cartao > 0 THEN
-      pagamentos_calculados := jsonb_set(pagamentos_calculados, '{cartao}', to_jsonb(valor_cartao + juros_cartao), true);
-      total_calculado := total_calculado + juros_cartao;
-    END IF;
-  END IF;
 
   telefone_normalizado := regexp_replace(COALESCE(p_cliente_telefone, ''), '\D', '', 'g');
   IF left(telefone_normalizado, 2) = '55' AND length(telefone_normalizado) IN (12, 13) THEN
@@ -120,7 +120,13 @@ BEGIN
       RAISE EXCEPTION 'Produto não identificado no pedido';
     END IF;
 
-    SELECT custo INTO custo_produto
+    quantidade_item := NULLIF(item_json->>'quantidade', '')::integer;
+    IF quantidade_item IS NULL OR quantidade_item <= 0 THEN
+      RAISE EXCEPTION 'Quantidade inválida no pedido';
+    END IF;
+
+    SELECT custo, preco, COALESCE(isento_frete, FALSE)
+    INTO custo_produto, preco_produto, isento_frete_produto
     FROM produtos
     WHERE id = produto_id AND user_id = p_loja_user_id;
 
@@ -128,10 +134,39 @@ BEGIN
       RAISE EXCEPTION 'Produto do pedido não encontrado';
     END IF;
 
+    subtotal_itens_calculado := subtotal_itens_calculado + preco_produto * quantidade_item;
+    IF NOT isento_frete_produto THEN
+      subtotal_elegivel_frete := subtotal_elegivel_frete + preco_produto * quantidade_item;
+    END IF;
+
     itens_com_custo := itens_com_custo || jsonb_build_array(
-      item_json || jsonb_build_object('custo', COALESCE(custo_produto, 0))
+      item_json || jsonb_build_object(
+        'custo', COALESCE(custo_produto, 0),
+        'isentoFrete', isento_frete_produto
+      )
     );
   END LOOP;
+
+  IF subtotal_itens_calculado > 0 THEN
+    desconto_elegivel_frete := ROUND(LEAST(
+      GREATEST(COALESCE(p_desconto, 0), 0),
+      subtotal_itens_calculado
+    ) * subtotal_elegivel_frete / subtotal_itens_calculado, 2);
+  END IF;
+
+  IF minimo_frete > 0 AND valor_frete > 0 AND subtotal_elegivel_frete > 0
+     AND GREATEST(0, subtotal_elegivel_frete - desconto_elegivel_frete) < minimo_frete THEN
+    frete_calculado := valor_frete;
+  END IF;
+  total_calculado := GREATEST(0, COALESCE(p_subtotal, p_total, 0) - COALESCE(p_desconto, 0)) + frete_calculado;
+  IF jsonb_typeof(pagamentos_calculados) = 'object' AND percentual_juros_cartao > 0 THEN
+    valor_cartao := GREATEST(0, COALESCE(NULLIF(pagamentos_calculados->>'cartao', '')::numeric, 0));
+    juros_cartao := ROUND(valor_cartao * percentual_juros_cartao / 100, 2);
+    IF juros_cartao > 0 THEN
+      pagamentos_calculados := jsonb_set(pagamentos_calculados, '{cartao}', to_jsonb(valor_cartao + juros_cartao), true);
+      total_calculado := total_calculado + juros_cartao;
+    END IF;
+  END IF;
 
   INSERT INTO pedidos_rt (
     loja_user_id, cliente_nome, cliente_telefone, cliente_endereco, itens,

@@ -10,6 +10,7 @@
 -- ─── 1) Coluna nova em config: produtos escolhidos p/ o catálogo ───
 ALTER TABLE config ADD COLUMN IF NOT EXISTS catalogo_produtos JSONB DEFAULT '[]';
 ALTER TABLE config ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT '';
+ALTER TABLE produtos ADD COLUMN IF NOT EXISTS isento_frete BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Obs: o número de WhatsApp da loja é salvo dentro do JSONB já existente
 -- loja_config (chave "whatsapp"), então não precisa de coluna nova.
@@ -213,7 +214,7 @@ END $$;
 -- usuário — a view roda com o dono/postgres e por isso "atravessa"
 -- o RLS de propósito, funcionando como uma API de leitura pública).
 CREATE OR REPLACE VIEW catalogo_publico AS
-SELECT id, user_id, nome, preco, categoria, foto_url, estoque
+SELECT id, user_id, nome, preco, categoria, foto_url, estoque, isento_frete
 FROM produtos;
 
 GRANT SELECT ON catalogo_publico TO anon;

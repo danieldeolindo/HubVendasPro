@@ -171,6 +171,11 @@
 
         <!-- COLUNA DIREITA: carrinho + finalizar -->
         <div class="vendas-col-right">
+          <button type="button" class="mobile-resumo-toggle" id="mobileResumoToggle" aria-expanded="false" aria-controls="mobileResumoConteudo" onclick="toggleResumoMobile()">
+            <span class="mobile-resumo-texto"><strong id="mobileResumoTotal">R$ 0,00</strong><span id="mobileResumoAcao">Ver pedido</span></span>
+            <svg class="icon mobile-resumo-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+          <div class="mobile-resumo-conteudo" id="mobileResumoConteudo">
           <!-- CARRINHO INLINE -->
           <div class="section-card carrinho-card" id="carrinhoCard" style="display:none">
             <div class="carrinho-header">
@@ -215,7 +220,7 @@
             <div class="pagamento-split hidden" id="pagamentoSplit"></div>
           </div>
 
-          <div class="section-card">
+          <div class="section-card venda-cliente-card">
             <p class="section-label">Cliente <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--text3)">(opcional)</span></p>
             <div class="venda-cliente-selecao">
               <div class="venda-cliente-busca">
@@ -232,6 +237,7 @@
           <div class="finalizar-bar">
             <div class="finalizar-resumo" id="finalizarResumo"></div>
             <button class="btn-primary" style="width:100%;justify-content:center;" onclick="finalizarPedido()"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Finalizar Pedido</button>
+          </div>
           </div>
         </div>
       </div>
@@ -261,6 +267,7 @@
             <input type="text" id="categoriaProduto" placeholder="Ex: Bebidas" list="categoriasSugestoes" autocomplete="off">
             <datalist id="categoriasSugestoes"></datalist>
           </div>
+          <label class="produto-isento-frete"><input type="checkbox" id="produtoIsentoFrete"><span><strong>Isento da política de frete</strong><small>Não conta para o mínimo de frete grátis; pedidos só com itens isentos não pagam frete.</small></span></label>
         </div>
         <div class="field-group">
           <label>Foto do produto</label>
@@ -500,70 +507,104 @@
             <button class="btn-primary" onclick="salvarWhatsappLoja()">Salvar</button>
           </div>
         </div>
-        <div class="field-group" style="margin-bottom:14px">
-          <label>Cupom de desconto do catálogo</label>
-          <div class="config-cupom-row">
-            <input type="text" id="cupomCodigoLoja" placeholder="Palavra do cupom" maxlength="30" style="flex:1;min-width:160px;text-transform:uppercase">
-            <div class="config-cupom-percentual"><input type="number" id="cupomPercentualLoja" min="1" max="100" step="1" placeholder="10"><span>%</span></div>
-            <button class="btn-primary" onclick="salvarCupomLoja()">Salvar cupom</button>
+        <div class="config-accordion-list">
+          <div class="config-accordion-item">
+            <button type="button" class="config-accordion-trigger" aria-expanded="false" aria-controls="configCupomPanel" onclick="toggleConfigSection(this)"><span>Configurar cupom</span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <div class="config-accordion-panel" id="configCupomPanel"><div class="config-accordion-inner">
+              <div class="field-group" style="margin-bottom:14px">
+                <label>Cupom de desconto do catálogo</label>
+                <div class="config-cupom-row">
+                  <input type="text" id="cupomCodigoLoja" placeholder="Palavra do cupom" maxlength="30" style="flex:1;min-width:160px;text-transform:uppercase">
+                  <div class="config-cupom-percentual"><input type="number" id="cupomPercentualLoja" min="1" max="100" step="1" placeholder="10"><span>%</span></div>
+                  <button class="btn-primary" onclick="salvarCupomLoja()">Salvar cupom</button>
+                </div>
+                <span class="config-cupom-ajuda">O cliente informa essa palavra no link do catálogo para receber o desconto.</span>
+              </div>
+            </div></div>
           </div>
-          <span class="config-cupom-ajuda">O cliente informa essa palavra no link do catálogo para receber o desconto.</span>
-        </div>
-        <div class="field-group" style="margin-bottom:14px">
-          <label>Frete para pedidos do catálogo</label>
-          <div class="config-cupom-row">
-            <div class="frete-config-campo"><span>Valor mínimo para frete grátis (R$)</span><input type="number" id="freteGratisMinimo" min="0" step="0.01" placeholder="Ex.: 100,00"></div>
-            <div class="frete-config-campo"><span>Valor do frete (R$)</span><input type="number" id="valorFreteLoja" min="0" step="0.01" placeholder="Ex.: 10,00"></div>
-            <button class="btn-primary" onclick="salvarFreteLoja()">Salvar frete</button>
+          <div class="config-accordion-item">
+            <button type="button" class="config-accordion-trigger" aria-expanded="false" aria-controls="configFretePanel" onclick="toggleConfigSection(this)"><span>Configurar frete</span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <div class="config-accordion-panel" id="configFretePanel"><div class="config-accordion-inner">
+              <div class="field-group" style="margin-bottom:14px">
+                <label>Frete para pedidos do catálogo</label>
+                <div class="config-cupom-row">
+                  <div class="frete-config-campo"><span>Valor mínimo para frete grátis (R$)</span><input type="number" id="freteGratisMinimo" min="0" step="0.01" placeholder="Ex.: 100,00"></div>
+                  <div class="frete-config-campo"><span>Valor do frete (R$)</span><input type="number" id="valorFreteLoja" min="0" step="0.01" placeholder="Ex.: 10,00"></div>
+                  <button class="btn-primary" onclick="salvarFreteLoja()">Salvar frete</button>
+                </div>
+                <span class="config-cupom-ajuda">No catálogo, o frete é calculado automaticamente apenas sobre produtos sujeitos à política. Nas vendas manuais, você decide se inclui o frete.</span>
+              </div>
+            </div></div>
           </div>
-          <span class="config-cupom-ajuda">No catálogo, o frete é calculado automaticamente. Nas vendas manuais, você decide se inclui o frete.</span>
-        </div>
-        <div class="field-group" style="margin-bottom:14px">
-          <label>Juros para pagamento com cartão</label>
-          <div class="config-cupom-row">
-            <div class="config-cupom-percentual"><input type="number" id="jurosCartaoLoja" min="0" max="100" step="0.01" placeholder="0,00"><span>%</span></div>
-            <button class="btn-primary" onclick="salvarJurosCartaoLoja()">Salvar juros</button>
+          <div class="config-accordion-item">
+            <button type="button" class="config-accordion-trigger" aria-expanded="false" aria-controls="configJurosPanel" onclick="toggleConfigSection(this)"><span>Configurar juros do cartão</span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <div class="config-accordion-panel" id="configJurosPanel"><div class="config-accordion-inner">
+              <div class="field-group" style="margin-bottom:14px">
+                <label>Juros para pagamento com cartão</label>
+                <div class="config-cupom-row">
+                  <div class="config-cupom-percentual"><input type="number" id="jurosCartaoLoja" min="0" max="100" step="0.01" placeholder="0,00"><span>%</span></div>
+                  <button class="btn-primary" onclick="salvarJurosCartaoLoja()">Salvar juros</button>
+                </div>
+                <span class="config-cupom-ajuda">O percentual é aplicado somente ao valor pago no cartão, inclusive em pagamentos divididos. Deixe zero para desativar.</span>
+              </div>
+            </div></div>
           </div>
-          <span class="config-cupom-ajuda">O percentual é aplicado somente ao valor pago no cartão, inclusive em pagamentos divididos. Deixe zero para desativar.</span>
-        </div>
-        <div class="loja-config-grid">
-          <div>
-            <p class="section-label" style="margin-bottom:10px">Cor do nome</p>
-            <div class="color-swatches" id="lojaColorSwatches"></div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-              <label style="font-size:12px;color:var(--text3);font-weight:600">Personalizada:</label>
-              <input type="color" id="lojaCorCustom" value="#00bf63" style="width:34px;height:34px;border:none;border-radius:6px;cursor:pointer;padding:2px;background:transparent" oninput="selecionarCorLoja(this.value,true)">
+          <div class="config-accordion-item">
+            <button type="button" class="config-accordion-trigger" aria-expanded="false" aria-controls="configIdentidadePanel" onclick="toggleConfigSection(this)"><span>Personalizar cor e fonte do nome</span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <div class="config-accordion-panel" id="configIdentidadePanel"><div class="config-accordion-inner">
+              <div class="loja-config-grid">
+                <div>
+                  <p class="section-label" style="margin-bottom:10px">Cor do nome</p>
+                  <div class="color-swatches" id="lojaColorSwatches"></div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+                    <label style="font-size:12px;color:var(--text3);font-weight:600">Personalizada:</label>
+                    <input type="color" id="lojaCorCustom" value="#00bf63" style="width:34px;height:34px;border:none;border-radius:6px;cursor:pointer;padding:2px;background:transparent" oninput="selecionarCorLoja(this.value,true)">
+                  </div>
+                </div>
+                <div>
+                  <p class="section-label" style="margin-bottom:10px">Fonte do nome</p>
+                  <div class="font-opcoes" id="lojaFontOpcoes"></div>
+                </div>
+              </div>
             </div>
-          </div>
-          <div>
-            <p class="section-label" style="margin-bottom:10px">Fonte do nome</p>
-            <div class="font-opcoes" id="lojaFontOpcoes"></div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="section-card config-card">
-        <div class="config-card-header">
+      <div class="section-card config-card config-card-accordion">
+        <button type="button" class="config-card-trigger" aria-expanded="false" aria-controls="configAparenciaPanel" onclick="toggleConfigSection(this)">
+          <span class="config-card-header">
           <span class="config-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.3-.5-.8-.5-1.2 0-1.1.9-2 2-2H17a4 4 0 0 0 4-4c0-4.4-4-7.5-9-7.5z"/><circle cx="7" cy="12" r="1"/><circle cx="9" cy="8" r="1"/><circle cx="14" cy="7.5" r="1"/><circle cx="17" cy="10.5" r="1"/></svg></span>
           <div><p class="config-title">Aparência</p><p class="config-desc">Escolha entre o modo claro e escuro</p></div>
-        </div>
+          </span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="config-accordion-panel" id="configAparenciaPanel"><div class="config-accordion-inner">
         <div class="tema-opcoes">
           <button class="btn-tema" id="tema-claro" onclick="definirTema('light')"><span class="tema-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/></svg></span><span>Claro</span></button>
           <button class="btn-tema" id="tema-escuro" onclick="definirTema('dark')"><span class="tema-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span><span>Escuro</span></button>
         </div>
+        </div></div>
       </div>
-      <div class="section-card config-card">
-        <div class="config-card-header">
+      <div class="section-card config-card config-card-accordion">
+        <button type="button" class="config-card-trigger" aria-expanded="false" aria-controls="configMenuPanel" onclick="toggleConfigSection(this)">
+          <span class="config-card-header">
           <span class="config-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></span>
           <div><p class="config-title">Ordem do Menu</p><p class="config-desc">Arraste os itens para reorganizar</p></div>
-        </div>
+          </span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="config-accordion-panel" id="configMenuPanel"><div class="config-accordion-inner">
         <div class="menu-order-list" id="menuOrderList"></div>
         <button class="btn-ghost" style="margin-top:12px" onclick="resetarOrdemMenu()"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 3 3 8 8 8"/></svg> Restaurar padrão</button>
+        </div></div>
       </div>
-      <div class="section-card config-card">
-        <div class="config-card-header">
+      <div class="section-card config-card config-card-accordion">
+        <button type="button" class="config-card-trigger" aria-expanded="false" aria-controls="configSenhaPanel" onclick="toggleConfigSection(this)">
+          <span class="config-card-header">
           <span class="config-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
           <div><p class="config-title">Trocar Senha</p><p class="config-desc">Atualize sua senha de acesso</p></div>
-        </div>
+          </span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="config-accordion-panel" id="configSenhaPanel"><div class="config-accordion-inner">
         <div class="field-group"><label>Senha atual</label>
           <div class="input-group"><input type="password" id="senhaAtual" placeholder="••••••••"><span class="toggle-senha" onclick="toggleSenha('senhaAtual',this)"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span></div>
         </div>
@@ -574,6 +615,7 @@
           <div class="input-group"><input type="password" id="confirmarSenhaConfig" placeholder="Repita a nova senha"><span class="toggle-senha" onclick="toggleSenha('confirmarSenhaConfig',this)"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span></div>
         </div>
         <button class="btn-primary" onclick="trocarSenha()">Atualizar senha</button>
+        </div></div>
       </div>
     </section>
 
