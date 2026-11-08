@@ -708,7 +708,7 @@ input[type="file"] { display: none; }
 .catalogo-screen {
   --cat-cor: var(--green);
   --cat-fonte: var(--font);
-  min-height: 100vh; background: var(--bg); font-family: var(--font); color: var(--text);
+  min-height: 100vh; overflow-x: clip; background: var(--bg); font-family: var(--font); color: var(--text);
 }
 .catalogo-header { display: flex; align-items: center; gap: 14px; padding: 20px 16px; max-width: 720px; margin: 0 auto; }
 .catalogo-logo-wrap { width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0; overflow: hidden; border: 2px solid var(--cat-cor); display: flex; align-items: center; justify-content: center; background: var(--surface); }
@@ -718,7 +718,7 @@ input[type="file"] { display: none; }
 .catalogo-loja-nome { font-size: 22px; font-weight: 800; margin: 0 0 2px; font-family: var(--cat-fonte); color: var(--cat-cor); overflow-wrap: anywhere; }
 .catalogo-loja-sub { font-size: 13px; color: var(--text3); margin: 0; }
 
-.catalogo-main { max-width: 720px; margin: 0 auto; padding: 0 16px 32px; }
+.catalogo-main { width: 100%; min-width: 0; max-width: 720px; margin: 0 auto; padding: 0 16px 32px; }
 .catalogo-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .catalogo-produto-card { display: flex; flex-direction: column; gap: 6px; padding: 12px; }
 .catalogo-produto-card img { height: 100px; }
@@ -735,6 +735,7 @@ input[type="file"] { display: none; }
 .catalogo-screen .btn-qtd:hover { background: var(--cat-cor); border-color: var(--cat-cor); }
 .catalogo-screen .btn-primary { background: var(--cat-cor); border-color: var(--cat-cor); }
 .catalogo-screen .btn-primary:hover { filter: brightness(0.92); }
+.catalogo-screen .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 .catalogo-screen .btn-pagamento.ativo { background: var(--cat-cor); border-color: var(--cat-cor); color: #fff; }
 .catalogo-screen .card-produto:hover { border-color: var(--cat-cor); box-shadow: var(--shadow-md); }
 .catalogo-screen .input-qtd:focus, .catalogo-screen input:focus { border-color: var(--cat-cor); }
@@ -767,6 +768,26 @@ input[type="file"] { display: none; }
 .catalogo-cupom-status.valido { color: var(--green-dark); }
 .catalogo-cupom-status.invalido { color: var(--red); }
 .catalogo-vazio { text-align: center; padding: 40px 20px; color: var(--text3); grid-column: 1/-1; }
+.catalogo-categorias-tabs { display: flex; width: 100%; min-width: 0; max-width: 100%; gap: 6px; margin: 0 0 14px; padding: 2px 0 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; touch-action: pan-x pan-y; }
+.catalogo-categorias-tabs:empty { display: none; }
+.catalogo-categorias-tabs .btn-categoria { flex: 0 0 auto; border-color: var(--border); background: var(--surface2); color: var(--text2); }
+.catalogo-categorias-tabs .btn-categoria.ativo { background: var(--cat-cor); border-color: var(--cat-cor); color: #fff; }
+.catalogo-aviso-fechado { margin: 0 0 16px; padding: 13px 16px; border: 1px solid #f0b4b4; border-radius: var(--radius-sm); background: #fff1f1; color: #a52222; font-size: 14px; font-weight: 700; line-height: 1.45; }
+.catalogo-aviso-fechado[hidden], .catalogo-troco[hidden], .catalogo-troco-valor[hidden] { display: none; }
+.catalogo-troco { margin-top: 16px; }
+.catalogo-troco > select, .catalogo-troco-valor > input { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--input-bg); font: inherit; }
+.catalogo-troco-valor { margin-top: 10px; }
+.catalogo-troco-valor input:focus { border-color: var(--cat-cor); outline: none; }
+.config-horario-ativar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.config-horario-ativar input, .config-horario-dia input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--green); }
+.config-horario-dias { display: flex; flex-direction: column; gap: 7px; margin: 14px 0; }
+.config-horario-dia { display: grid; grid-template-columns: minmax(125px, 1fr) minmax(100px, 140px) 18px minmax(100px, 140px); align-items: center; gap: 8px; }
+.config-horario-dia > label { display: flex; align-items: center; gap: 8px; color: var(--text2); font-size: 13px; font-weight: 600; }
+.config-horario-dia > span { color: var(--text3); font-size: 12px; text-align: center; }
+.config-horario-dia > input[type="time"] { min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--input-bg); font: inherit; }
+.config-horario-dia > input:disabled { opacity: .5; }
+.config-horario-status { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border2); color: var(--text2); }
+.config-horario-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
 
 @media (max-width: 480px) {
   .catalogo-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -775,4 +796,6 @@ input[type="file"] { display: none; }
   .catalogo-loja-nome { font-size: 18px; }
   .catalogo-main { padding: 0 12px 24px; }
   .catalogo-produto-card img { height: 88px; }
+  .config-horario-dia { grid-template-columns: minmax(98px, 1.2fr) minmax(68px, .9fr) 12px minmax(68px, .9fr); gap: 5px; }
+  .config-horario-dia > label { font-size: 11px; gap: 5px; }
 }

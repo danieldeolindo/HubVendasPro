@@ -509,6 +509,34 @@
         </div>
         <div class="config-accordion-list">
           <div class="config-accordion-item">
+            <button type="button" class="config-accordion-trigger" aria-expanded="false" aria-controls="configHorarioPanel" onclick="toggleConfigSection(this)"><span>Horário de funcionamento</span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <div class="config-accordion-panel" id="configHorarioPanel"><div class="config-accordion-inner">
+              <div class="field-group">
+                <label class="config-horario-ativar"><input type="checkbox" id="horarioLojaAtivo" onchange="atualizarCamposHorarioLoja()"> Usar horário de funcionamento</label>
+                <span class="config-cupom-ajuda">Fora dos horários configurados, o catálogo informa que a loja está fechada e bloqueia novos pedidos. Horário de Brasília.</span>
+                <div class="config-horario-dias" id="horarioLojaDias">
+                  <div class="config-horario-dia" data-dia="1"><label><input type="checkbox" class="horario-dia-ativo" onchange="atualizarCamposHorarioLoja()"> Segunda-feira</label><input type="time" class="horario-dia-abre" aria-label="Abre segunda-feira"><span>às</span><input type="time" class="horario-dia-fecha" aria-label="Fecha segunda-feira"></div>
+                  <div class="config-horario-dia" data-dia="2"><label><input type="checkbox" class="horario-dia-ativo" onchange="atualizarCamposHorarioLoja()"> Terça-feira</label><input type="time" class="horario-dia-abre" aria-label="Abre terça-feira"><span>às</span><input type="time" class="horario-dia-fecha" aria-label="Fecha terça-feira"></div>
+                  <div class="config-horario-dia" data-dia="3"><label><input type="checkbox" class="horario-dia-ativo" onchange="atualizarCamposHorarioLoja()"> Quarta-feira</label><input type="time" class="horario-dia-abre" aria-label="Abre quarta-feira"><span>às</span><input type="time" class="horario-dia-fecha" aria-label="Fecha quarta-feira"></div>
+                  <div class="config-horario-dia" data-dia="4"><label><input type="checkbox" class="horario-dia-ativo" onchange="atualizarCamposHorarioLoja()"> Quinta-feira</label><input type="time" class="horario-dia-abre" aria-label="Abre quinta-feira"><span>às</span><input type="time" class="horario-dia-fecha" aria-label="Fecha quinta-feira"></div>
+                  <div class="config-horario-dia" data-dia="5"><label><input type="checkbox" class="horario-dia-ativo" onchange="atualizarCamposHorarioLoja()"> Sexta-feira</label><input type="time" class="horario-dia-abre" aria-label="Abre sexta-feira"><span>às</span><input type="time" class="horario-dia-fecha" aria-label="Fecha sexta-feira"></div>
+                  <div class="config-horario-dia" data-dia="6"><label><input type="checkbox" class="horario-dia-ativo" onchange="atualizarCamposHorarioLoja()"> Sábado</label><input type="time" class="horario-dia-abre" aria-label="Abre sábado"><span>às</span><input type="time" class="horario-dia-fecha" aria-label="Fecha sábado"></div>
+                  <div class="config-horario-dia" data-dia="0"><label><input type="checkbox" class="horario-dia-ativo" onchange="atualizarCamposHorarioLoja()"> Domingo</label><input type="time" class="horario-dia-abre" aria-label="Abre domingo"><span>às</span><input type="time" class="horario-dia-fecha" aria-label="Fecha domingo"></div>
+                </div>
+                <button class="btn-primary" type="button" onclick="salvarHorarioLoja()">Salvar horário</button>
+              </div>
+              <div class="config-horario-status">
+                <strong id="statusHorarioLoja">Status da loja</strong>
+                <div class="config-horario-acoes">
+                  <button class="btn-ghost" type="button" onclick="definirStatusManualLoja('aberto')">Abrir manualmente</button>
+                  <button class="btn-ghost" type="button" onclick="definirStatusManualLoja('fechado')">Fechar manualmente</button>
+                  <button class="btn-ghost" type="button" onclick="seguirHorarioLoja()">Seguir horário</button>
+                </div>
+                <span class="config-cupom-ajuda">A abertura ou o fechamento manual vale até o próximo horário programado. Sem horário ativo, o status manual permanece até você selecionar “Seguir horário”.</span>
+              </div>
+            </div></div>
+          </div>
+          <div class="config-accordion-item">
             <button type="button" class="config-accordion-trigger" aria-expanded="false" aria-controls="configCupomPanel" onclick="toggleConfigSection(this)"><span>Configurar cupom</span><svg class="icon config-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
             <div class="config-accordion-panel" id="configCupomPanel"><div class="config-accordion-inner">
               <div class="field-group" style="margin-bottom:14px">
@@ -635,6 +663,8 @@
     </div>
   </header>
   <main class="catalogo-main">
+    <div id="catalogoAvisoLojaFechada" class="catalogo-aviso-fechado" role="status" hidden></div>
+    <div id="catalogoCategoriasTabs" class="catalogo-categorias-tabs" aria-label="Categorias de produtos"></div>
     <div id="catalogoListaProdutos" class="produtos-grid catalogo-grid"></div>
 
     <div id="catalogoCarrinhoWrap" class="section-card catalogo-carrinho" style="display:none">
@@ -665,6 +695,17 @@
         <button class="btn-pagamento" id="catpag-pix" onclick="togglePagamentoCatalogo('pix')"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2"/></svg> Pix</button>
       </div>
       <div class="pagamento-split hidden" id="catalogoPagamentoSplit"></div>
+      <div class="field-group catalogo-troco" id="catalogoTrocoWrap" hidden>
+        <label for="catalogoPrecisaTroco">Vai precisar de troco?</label>
+        <select id="catalogoPrecisaTroco" onchange="atualizarTrocoCatalogo()">
+          <option value="nao">Não</option>
+          <option value="sim">Sim</option>
+        </select>
+        <div class="field-group catalogo-troco-valor" id="catalogoTrocoValorWrap" hidden>
+          <label for="catalogoTrocoPara">Troco para quanto? (valor da cédula)</label>
+          <input type="number" id="catalogoTrocoPara" min="0.01" step="0.01" placeholder="Ex.: 100,00" oninput="atualizarTrocoCatalogo()">
+        </div>
+      </div>
 
       <div class="form-row" style="margin-top:16px">
         <div class="field-group flex1"><label>Seu nome</label><input type="text" id="catalogoClienteNome" placeholder="Nome completo"></div>

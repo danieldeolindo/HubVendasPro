@@ -445,7 +445,7 @@ async function removerImagem(k) {
 ───────────────────────────────────────── */
 const LOJA_CORES=[{hex:"#00bf63",label:"Verde"},{hex:"#e53935",label:"Vermelho"},{hex:"#2563eb",label:"Azul"},{hex:"#f59e0b",label:"Amarelo"},{hex:"#8b5cf6",label:"Roxo"},{hex:"#ec4899",label:"Rosa"},{hex:"#0d9488",label:"Teal"},{hex:"#ea580c",label:"Laranja"},{hex:"#0d0d0d",label:"Preto"}];
 const LOJA_FONTES=[{id:"jakarta",label:"Plus Jakarta Sans",css:"'Plus Jakarta Sans', sans-serif"},{id:"mono",label:"DM Mono",css:"'DM Mono', monospace"},{id:"serif",label:"Georgia (Serif)",css:"Georgia, serif"},{id:"rounded",label:"Verdana",css:"Verdana, sans-serif"}];
-let lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:"",cupom_codigo:"",cupom_percentual:0,frete_minimo:0,valor_frete:0,juros_cartao_percentual:0};
+let lojaConfigAtual={nome:"",cor:"#00bf63",fonte:"jakarta",whatsapp:"",cupom_codigo:"",cupom_percentual:0,frete_minimo:0,valor_frete:0,juros_cartao_percentual:0,horario_ativo:false,horario_funcionamento:{},status_manual:null,status_manual_ate:null};
 let _menuOrdemLocal = null;
 let catalogoSelecionado = [];   // array de firestoreId (uuid) dos produtos no catálogo público
 let canalPedidosRT = null;      // referência do canal Realtime (Atendimento RT)
@@ -507,6 +507,132 @@ async function salvarJurosCartaoLoja() {
   }
   atualizarTotal();
   mostrarToast(percentual>0?"Juros do cartão salvos!":"Juros do cartão desativados.");
+}
+function horarioMinutos(valor) {
+  const [hora,minuto]=String(valor||"").split(":").map(Number);
+  return Number.isFinite(hora)&&Number.isFinite(minuto)?hora*60+minuto:NaN;
+}
+function partesHorarioBrasilia(data=new Date()) {
+  const partes=new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(data);
+  const valores=Object.fromEntries(partes.map(parte=>[parte.type,parte.value]));
+  return {...valores,diaSemana:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(valores.weekday)};
+}
+function dataHorarioBrasilia(ano,mes,dia,hora,minuto) {
+  const aproximado=Date.UTC(ano,mes-1,dia,hora,minuto);
+  const partes=partesHorarioBrasilia(new Date(aproximado));
+  const horarioConvertido=Date.UTC(Number(partes.year),Number(partes.month)-1,Number(partes.day),Number(partes.hour),Number(partes.minute));
+  return new Date(aproximado+(aproximado-horarioConvertido));
+}
+function lojaEstaAberta(config=lojaConfigAtual, agora=new Date()) {
+  const manualAte=config.status_manual_ate?new Date(config.status_manual_ate):null;
+  if ((config.status_manual==="aberto"||config.status_manual==="fechado")&&(!manualAte||(!Number.isNaN(manualAte.getTime())&&agora<manualAte))) {
+    return config.status_manual==="aberto";
+  }
+  if (!config.horario_ativo) return true;
+  const partes=partesHorarioBrasilia(agora);
+  const horario=config.horario_funcionamento?.[partes.diaSemana];
+  if (!horario?.aberto) return false;
+  const atual=Number(partes.hour)*60+Number(partes.minute);
+  return atual>=horarioMinutos(horario.abre)&&atual<horarioMinutos(horario.fecha);
+}
+function proximaMudancaHorarioLoja(statusManual, agora=new Date()) {
+  if (!lojaConfigAtual.horario_ativo) return null;
+  const hoje=partesHorarioBrasilia(agora);
+  for (let dias=0;dias<=7;dias++) {
+    const data=new Date(Date.UTC(Number(hoje.year),Number(hoje.month)-1,Number(hoje.day)+dias));
+    const horario=lojaConfigAtual.horario_funcionamento?.[data.getUTCDay()];
+    if (!horario?.aberto) continue;
+    const limite=statusManual==="aberto"?horario.fecha:horario.abre;
+    const [hora,minuto]=String(limite||"").split(":").map(Number);
+    if (!Number.isFinite(hora)||!Number.isFinite(minuto)) continue;
+    const limiteLocal=dataHorarioBrasilia(data.getUTCFullYear(),data.getUTCMonth()+1,data.getUTCDate(),hora,minuto);
+    if (limiteLocal>agora) return limiteLocal.toISOString();
+  }
+  return null;
+}
+function atualizarCamposHorarioLoja() {
+  const ativo=document.getElementById("horarioLojaAtivo")?.checked===true;
+  document.querySelectorAll(".config-horario-dia").forEach(linha=>{
+    const selecionado=linha.querySelector(".horario-dia-ativo")?.checked===true;
+    linha.querySelectorAll('input[type="time"]').forEach(input=>{input.disabled=!ativo||!selecionado;});
+  });
+}
+function renderHorarioLojaConfig() {
+  const ativo=document.getElementById("horarioLojaAtivo");
+  if (ativo) ativo.checked=lojaConfigAtual.horario_ativo===true;
+  document.querySelectorAll(".config-horario-dia").forEach(linha=>{
+    const horario=lojaConfigAtual.horario_funcionamento?.[linha.dataset.dia]||{};
+    const check=linha.querySelector(".horario-dia-ativo");
+    const abre=linha.querySelector(".horario-dia-abre");
+    const fecha=linha.querySelector(".horario-dia-fecha");
+    if(check)check.checked=horario.aberto===true;
+    if(abre)abre.value=horario.abre||"09:00";
+    if(fecha)fecha.value=horario.fecha||"18:00";
+  });
+  atualizarCamposHorarioLoja();
+  renderStatusHorarioLoja();
+}
+function renderStatusHorarioLoja() {
+  const status=document.getElementById("statusHorarioLoja");
+  if (!status) return;
+  const aberta=lojaEstaAberta();
+  const manualAte=lojaConfigAtual.status_manual_ate?new Date(lojaConfigAtual.status_manual_ate):null;
+  const manualAtivo=(lojaConfigAtual.status_manual==="aberto"||lojaConfigAtual.status_manual==="fechado")&&(!manualAte||(!Number.isNaN(manualAte.getTime())&&new Date()<manualAte));
+  status.textContent=`Loja ${aberta?"aberta":"fechada"}${manualAtivo?" manualmente":lojaConfigAtual.horario_ativo?" conforme o horário configurado":""}.`;
+}
+async function salvarHorarioLoja() {
+  const ativo=document.getElementById("horarioLojaAtivo")?.checked===true;
+  const horario={};
+  if (ativo) {
+    for (const linha of document.querySelectorAll(".config-horario-dia")) {
+      if (!linha.querySelector(".horario-dia-ativo")?.checked) continue;
+      const abre=linha.querySelector(".horario-dia-abre")?.value||"";
+      const fecha=linha.querySelector(".horario-dia-fecha")?.value||"";
+      if (!abre||!fecha||horarioMinutos(fecha)<=horarioMinutos(abre)) {
+        mostrarToast("Informe horários válidos; o fechamento deve ser depois da abertura.","erro");
+        return;
+      }
+      horario[linha.dataset.dia]={aberto:true,abre,fecha};
+    }
+    if (!Object.keys(horario).length) {
+      mostrarToast("Selecione ao menos um dia de funcionamento.","erro");
+      return;
+    }
+  }
+  const anterior=lojaConfigAtual;
+  lojaConfigAtual={...lojaConfigAtual,horario_ativo:ativo,horario_funcionamento:horario,status_manual:null,status_manual_ate:null};
+  if (!await fbSalvarConfig({lojaConfig:lojaConfigAtual})) {
+    lojaConfigAtual=anterior;
+    mostrarToast("Não foi possível salvar o horário da loja.","erro");
+    return;
+  }
+  renderHorarioLojaConfig();
+  atualizarStatusCatalogo();
+  mostrarToast(ativo?"Horário de funcionamento salvo!":"Horário desativado.");
+}
+async function definirStatusManualLoja(status) {
+  const anterior=lojaConfigAtual;
+  lojaConfigAtual={...lojaConfigAtual,status_manual:status,status_manual_ate:proximaMudancaHorarioLoja(status)};
+  if (!await fbSalvarConfig({lojaConfig:lojaConfigAtual})) {
+    lojaConfigAtual=anterior;
+    mostrarToast("Não foi possível alterar o status da loja.","erro");
+    return;
+  }
+  renderStatusHorarioLoja();
+  atualizarStatusCatalogo();
+  mostrarToast(status==="aberto"?"Loja aberta manualmente.":"Loja fechada manualmente.");
+}
+async function seguirHorarioLoja() {
+  const anterior=lojaConfigAtual;
+  lojaConfigAtual={...lojaConfigAtual,status_manual:null,status_manual_ate:null};
+  if (!await fbSalvarConfig({lojaConfig:lojaConfigAtual})) {
+    lojaConfigAtual=anterior;
+    mostrarToast("Não foi possível restaurar o horário configurado.","erro");
+    return;
+  }
+  renderStatusHorarioLoja();
+  atualizarStatusCatalogo();
+  mostrarToast("A loja voltou a seguir o horário configurado.");
 }
 function freteConfigurado() {
   return Number(lojaConfigAtual.frete_minimo)>0 && Number(lojaConfigAtual.valor_frete)>0;
@@ -1586,6 +1712,8 @@ function normalizarPedidoRT(p) {
     desconto: Number(p.desconto) || 0,
     frete: Number(p.frete) || 0,
     pagamentos: p.pagamentos || {},
+    precisa_troco: p.precisa_troco===true,
+    troco_para: Number(p.troco_para)||0,
     pagamento: p.pagamento || "dinheiro",
     clienteNome: p.cliente_nome || "",
     clienteEndereco: p.cliente_endereco || p.endereco || "",
@@ -1815,12 +1943,21 @@ async function salvarEdicaoVenda(){
 /* ─────────────────────────────────────────
    DASHBOARD
 ───────────────────────────────────────── */
+function calcularJurosIncluidosVenda(venda) {
+  const total=Number(venda.total)||0;
+  const subtotalRegistrado=Number(venda.subtotal)||0;
+  const subtotalItens=(venda.itens||[]).reduce((s,item)=>s+(Number(item.preco)||0)*(Number(item.quantidade)||1),0);
+  const subtotal=subtotalRegistrado>0?subtotalRegistrado:subtotalItens;
+  if (subtotal<=0) return 0;
+  const totalSemJuros=Math.max(0,subtotal-(Number(venda.desconto)||0))+(Number(venda.frete)||0);
+  return Math.max(0,total-totalSemJuros);
+}
 function renderDashboard() {
   ["hoje","semana","mes","tudo","custom"].forEach(n=>document.getElementById(`dash-filtro-${n}`)?.classList.toggle("ativo",n===filtroDashboard));
   const iv=intervalo(filtroDashboard,"dashFiltroDataInicio","dashFiltroDataFim");
   const registros=todosRegistros().filter(v=>vendaNoIntervalo(v,iv));
   const canceladas=registros.filter(v=>v.cancelada), vt=registros.filter(v=>!v.cancelada && (v.origem!=="art" || v.status==="atendido"));
-  const rt=vt.reduce((a,v)=>a+(v.total||0),0), custoTotal=vt.reduce((a,v)=>a+(v.itens||[]).reduce((s,item)=>{const produto=produtos.find(p=>p.skuId===item.skuId||p.nome===item.nome);return s+(Number(item.custo??produto?.custo)||0)*(Number(item.quantidade)||1);},0),0), lucro=rt-custoTotal, descontos=vt.reduce((a,v)=>a+(v.desconto||0),0), fretes=vt.reduce((a,v)=>a+(Number(v.frete)||0),0), ticket=vt.length?rt/vt.length:0;
+  const rt=vt.reduce((a,v)=>a+(v.total||0),0), custoTotal=vt.reduce((a,v)=>a+(v.itens||[]).reduce((s,item)=>{const produto=produtos.find(p=>p.skuId===item.skuId||p.nome===item.nome);return s+(Number(item.custo??produto?.custo)||0)*(Number(item.quantidade)||1);},0),0), jurosCartaoTotal=vt.reduce((a,v)=>a+calcularJurosIncluidosVenda(v),0), lucro=rt-custoTotal-jurosCartaoTotal, descontos=vt.reduce((a,v)=>a+(v.desconto||0),0), fretes=vt.reduce((a,v)=>a+(Number(v.frete)||0),0), ticket=vt.length?rt/vt.length:0;
   const periodoLabel={hoje:"Hoje",semana:"Últimos 7 dias",mes:"Últimos 30 dias",tudo:"Todo o período",custom:"Período personalizado"}[filtroDashboard];
   document.getElementById("kpiGrid").innerHTML=`<div class="kpi-card"><div class="kpi-icon">${ic("wallet")}</div><div class="kpi-label">Faturamento</div><div class="kpi-value green">R$ ${fmt(rt)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("package")}</div><div class="kpi-label">Frete cobrado</div><div class="kpi-value">R$ ${fmt(fretes)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("trending-up")}</div><div class="kpi-label">Lucro líquido</div><div class="kpi-value ${lucro<0?"red":"green"}">R$ ${fmt(lucro)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("cart")}</div><div class="kpi-label">Vendas concluídas</div><div class="kpi-value">${vt.length}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("target")}</div><div class="kpi-label">Ticket médio</div><div class="kpi-value">R$ ${fmt(ticket)}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("x-circle")}</div><div class="kpi-label">Vendas canceladas</div><div class="kpi-value">${canceladas.length}</div></div><div class="kpi-card"><div class="kpi-icon">${ic("tag")}</div><div class="kpi-label">Descontos</div><div class="kpi-value">R$ ${fmt(descontos)}</div></div>`;
   document.getElementById("dashData").textContent=periodoLabel;
@@ -2289,7 +2426,7 @@ function renderPedidoRTCard(p) {
     </div>
     <p class="pedido-rt-itens">${itensTxt}</p>
     <div class="pedido-rt-rodape">
-      <span class="pedido-rt-total">R$ ${fmt(p.total)} · ${pagTxt}${Number(p.frete)>0?` · Frete R$ ${fmt(Number(p.frete))}`:""}</span>
+      <span class="pedido-rt-total">R$ ${fmt(p.total)} · ${pagTxt}${Number(p.frete)>0?` · Frete R$ ${fmt(Number(p.frete))}`:""}${p.precisa_troco&&Number(p.troco_para)>0?` · Troco para R$ ${fmt(Number(p.troco_para))}`:""}</span>
       <span class="pedido-rt-tel">${ic("phone")} ${p.cliente_telefone||"—"}</span>
     </div>
     <div class="pedido-rt-acoes">
@@ -2342,6 +2479,11 @@ let cupomCatalogoAplicado = false;
 let freteGratisMinimoPublico = 0;
 let valorFretePublico = 0;
 let jurosCartaoPublico = 0;
+let horarioLojaPublico = {horario_ativo:false,horario_funcionamento:{},status_manual:null,status_manual_ate:null};
+let categoriaAtivaCatalogo = "todas";
+let categoriasCatalogoPublicas = [];
+let catalogoFechado = false;
+let timerStatusCatalogo = null;
 let arrastoCarrinhoCatalogo = null;
 let ignorarCliqueCarrinhoCatalogo = false;
 let carrinhoCatalogoHistoricoAtivo = false;
@@ -2450,6 +2592,15 @@ async function iniciarModoCatalogo() {
     freteGratisMinimoPublico = Math.max(0, Number(loja.frete_minimo) || 0);
     valorFretePublico = Math.max(0, Number(loja.valor_frete) || 0);
     jurosCartaoPublico = Math.min(100,Math.max(0,Number(loja.juros_cartao_percentual)||0));
+    horarioLojaPublico = {
+      horario_ativo: loja.horario_ativo===true,
+      horario_funcionamento: loja.horario_funcionamento||{},
+      status_manual: loja.status_manual||null,
+      status_manual_ate: loja.status_manual_ate||null,
+    };
+    atualizarStatusCatalogo();
+    clearInterval(timerStatusCatalogo);
+    timerStatusCatalogo=setInterval(sincronizarStatusCatalogo,30000);
     const ids = loja.catalogo_produtos || [];
     if (!ids.length) { document.getElementById("catalogoListaProdutos").innerHTML = `<p class="catalogo-vazio">Nenhum produto disponível no momento.</p>`; return; }
     const { data, error } = await supabase.from("catalogo_publico").select("*").eq("user_id", LOJA_CATALOGO_ID).in("id", ids);
@@ -2480,7 +2631,11 @@ function aplicarIdentidadeCatalogo(loja) {
 function renderCatalogoProdutosPublico() {
   const lista = document.getElementById("catalogoListaProdutos");
   if (!lista) return;
-  lista.innerHTML = catalogoProdutosPublicos.map(p => `
+  renderCategoriasCatalogoPublico();
+  const produtosFiltrados=categoriaAtivaCatalogo==="todas"
+    ?catalogoProdutosPublicos
+    :catalogoProdutosPublicos.filter(p=>(p.categoria||"")===categoriaAtivaCatalogo);
+  lista.innerHTML = produtosFiltrados.length?produtosFiltrados.map(p => `
     <div class="card-produto catalogo-produto-card">
       ${p.foto_url?`<img src="${p.foto_url}" alt="">`:""}
       ${p.isento_frete?`<span class="prod-categoria">Isento de frete</span>`:""}
@@ -2488,15 +2643,63 @@ function renderCatalogoProdutosPublico() {
       <p class="prod-preco">R$ ${fmt(p.preco)}</p>
       ${(Number(p.estoque)||0) <= 0 ? `<p class="catalogo-sem-estoque">Sem estoque</p>` : `<p class="catalogo-estoque">Disponível</p>`}
       <div class="catalogo-qtd-row">
-        <button class="btn-qtd sm" onclick="alterarQtdCatalogo('${p.id}',-1)" ${(Number(p.estoque)||0) <= 0 ? "disabled" : ""}>−</button>
+        <button class="btn-qtd sm" onclick="alterarQtdCatalogo('${p.id}',-1)" ${(Number(p.estoque)||0) <= 0||catalogoFechado ? "disabled" : ""}>−</button>
         <span class="catalogo-qtd-val" id="catQtd-${p.id}">${carrinhoCatalogo[p.id]?.quantidade||0}</span>
-        <button class="btn-qtd sm" onclick="alterarQtdCatalogo('${p.id}',1)" ${(Number(p.estoque)||0) <= 0 ? "disabled" : ""}>+</button>
+        <button class="btn-qtd sm" onclick="alterarQtdCatalogo('${p.id}',1)" ${(Number(p.estoque)||0) <= 0||catalogoFechado ? "disabled" : ""}>+</button>
       </div>
-    </div>`).join("");
+    </div>`).join(""):`<p class="catalogo-vazio">${catalogoProdutosPublicos.length?"Nenhum produto nesta categoria.":"Nenhum produto disponível no momento."}</p>`;
   renderCarrinhoCatalogo();
+}
+function renderCategoriasCatalogoPublico() {
+  const tabs=document.getElementById("catalogoCategoriasTabs");
+  if (!tabs) return;
+  categoriasCatalogoPublicas=[...new Set(catalogoProdutosPublicos.map(p=>p.categoria).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  const categorias=["todas",...categoriasCatalogoPublicas];
+  tabs.innerHTML=categorias.map((categoria,indice)=>`
+    <button type="button" class="btn-categoria ${categoriaAtivaCatalogo===categoria?"ativo":""}" onclick="selecionarCategoriaCatalogo(${indice})">${indice===0?"Todas":escaparHTML(categoria)}</button>
+  `).join("");
+}
+function selecionarCategoriaCatalogo(indice) {
+  categoriaAtivaCatalogo=indice===0?"todas":categoriasCatalogoPublicas[indice-1]||"todas";
+  renderCatalogoProdutosPublico();
+}
+function atualizarStatusCatalogo() {
+  const aberta=lojaEstaAberta(horarioLojaPublico);
+  const mudou=catalogoFechado===aberta;
+  catalogoFechado=!aberta;
+  const aviso=document.getElementById("catalogoAvisoLojaFechada");
+  if (aviso) {
+    aviso.hidden=aberta;
+    aviso.textContent=aberta?"":"A loja está fechada no momento. Não é possível adicionar produtos ou enviar pedidos agora.";
+  }
+  const enviar=document.querySelector("#catalogoCarrinhoWrap button[onclick='finalizarPedidoCatalogo()']");
+  if (enviar) {
+    enviar.disabled=!aberta;
+    enviar.setAttribute("aria-disabled",String(!aberta));
+  }
+  if (mudou&&catalogoProdutosPublicos.length) renderCatalogoProdutosPublico();
+}
+async function sincronizarStatusCatalogo() {
+  const {data,error}=await supabase.from("loja_publica").select("horario_ativo,horario_funcionamento,status_manual,status_manual_ate").eq("user_id",LOJA_CATALOGO_ID).maybeSingle();
+  if (error) {
+    console.error("Não foi possível atualizar o status da loja:",error);
+    return;
+  }
+  if (!data) {
+    console.error("Não foi possível atualizar o status da loja: loja não encontrada.");
+    return;
+  }
+  horarioLojaPublico={
+    horario_ativo:data.horario_ativo===true,
+    horario_funcionamento:data.horario_funcionamento||{},
+    status_manual:data.status_manual||null,
+    status_manual_ate:data.status_manual_ate||null,
+  };
+  atualizarStatusCatalogo();
 }
 
 function alterarQtdCatalogo(id, delta) {
+  if (catalogoFechado) { mostrarToast("A loja está fechada e não está aceitando pedidos.","erro"); return; }
   const p = catalogoProdutosPublicos.find(x=>x.id===id); if (!p) return;
   const estoque = Math.max(0, Number(p.estoque) || 0);
   const atual = carrinhoCatalogo[id]?.quantidade || 0;
@@ -2577,6 +2780,7 @@ function atualizarTotalCatalogo() {
   const total = totalCatalogo();
   renderResumoValoresCatalogo();
   renderSplitPagamentoCatalogo();
+  atualizarTrocoCatalogo();
 }
 
 /* Pagamento múltiplo — reaproveita os mesmos helpers da aba Vendas (_renderSplitHTML/_atualizarResto/getSplitFinal) */
@@ -2585,6 +2789,22 @@ function togglePagamentoCatalogo(tipo) {
   if (idx===-1) { pagamentosCatalogo.push(tipo); }
   else { if (pagamentosCatalogo.length===1) { mostrarToast("Selecione ao menos uma forma de pagamento.","erro"); return; } pagamentosCatalogo.splice(idx,1); delete splitCatalogo[tipo]; }
   renderBotoesPagamentoCatalogo(); atualizarTotalCatalogo();
+}
+function atualizarTrocoCatalogo() {
+  const wrap=document.getElementById("catalogoTrocoWrap");
+  const select=document.getElementById("catalogoPrecisaTroco");
+  const valorWrap=document.getElementById("catalogoTrocoValorWrap");
+  const valor=document.getElementById("catalogoTrocoPara");
+  if (!wrap||!select||!valorWrap||!valor) return;
+  const aceitaDinheiro=pagamentosCatalogo.includes("dinheiro");
+  wrap.hidden=!aceitaDinheiro;
+  if (!aceitaDinheiro) {
+    select.value="nao";
+    valor.value="";
+  }
+  const precisa=aceitaDinheiro&&select.value==="sim";
+  valorWrap.hidden=!precisa;
+  valor.required=precisa;
 }
 function renderBotoesPagamentoCatalogo() {
   ["dinheiro","cartao","pix"].forEach(t => document.getElementById(`catpag-${t}`)?.classList.toggle("ativo", pagamentosCatalogo.includes(t)));
@@ -2614,6 +2834,7 @@ function onSplitInputCatalogo(tipo) {
 }
 
 async function finalizarPedidoCatalogo() {
+  if (catalogoFechado) { mostrarToast("A loja está fechada e não está aceitando pedidos.","erro"); return; }
   const nome = document.getElementById("catalogoClienteNome").value.trim();
   const telefone = document.getElementById("catalogoClienteTelefone").value.trim();
   const endereco = document.getElementById("catalogoClienteEndereco").value.trim();
@@ -2628,22 +2849,39 @@ async function finalizarPedidoCatalogo() {
     const soma=pagamentosCatalogo.slice(0,-1).reduce((valor,tipo)=>valor+(parseFloat(splitCatalogo[tipo])||0),0);
     if (soma>total+.005) { mostrarToast("A soma dos pagamentos ultrapassa o total.","erro"); return; }
   }
+  const precisaTroco=pagamentosCatalogo.includes("dinheiro")&&document.getElementById("catalogoPrecisaTroco")?.value==="sim";
+  const trocoPara=precisaTroco?Number(document.getElementById("catalogoTrocoPara")?.value):null;
+  const valorDinheiro=getSplitFinal(pagamentosCatalogo,splitCatalogo,total).dinheiro||0;
+  if (precisaTroco&&(!Number.isFinite(trocoPara)||trocoPara<=valorDinheiro)) {
+    mostrarToast(`Informe um valor maior que R$ ${fmt(valorDinheiro)} para o troco.`,"erro");
+    return;
+  }
   const {pagamentos: pagamentosFinal, total: totalComJuros} = calcularPagamentosCatalogoComJuros();
   const pagamentosParaRpc=getSplitFinal(pagamentosCatalogo,splitCatalogo,total);
   mostrarLoading("Enviando pedido...");
-  const { error } = await supabase.rpc("criar_pedido_rt", {
-    p_loja_user_id: LOJA_CATALOGO_ID,
-    p_cliente_nome: nome,
-    p_cliente_telefone: telefone,
-    p_cliente_endereco: endereco,
-    p_itens: itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.preco,fotoUrl:i.fotoUrl||""})),
-    p_total: totalComJuros,
-    p_pagamento: pagamentosCatalogo.join("+"),
-    p_pagamentos: pagamentosParaRpc,
-    p_subtotal: subtotal,
-    p_desconto: desconto,
-  });
-  esconderLoading();
+  let error;
+  try {
+    ({error}=await supabase.rpc("criar_pedido_rt", {
+      p_loja_user_id: LOJA_CATALOGO_ID,
+      p_cliente_nome: nome,
+      p_cliente_telefone: telefone,
+      p_cliente_endereco: endereco,
+      p_itens: itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.preco,fotoUrl:i.fotoUrl||""})),
+      p_total: totalComJuros,
+      p_pagamento: pagamentosCatalogo.join("+"),
+      p_pagamentos: pagamentosParaRpc,
+      p_subtotal: subtotal,
+      p_desconto: desconto,
+      p_precisa_troco: precisaTroco,
+      p_troco_para: trocoPara,
+    }));
+  } catch(e) {
+    console.error("Erro ao enviar pedido RT:", e);
+    mostrarToast(`Erro ao enviar pedido: ${e.message||"falha de conexão"}`,"erro");
+    return;
+  } finally {
+    esconderLoading();
+  }
   if (error) {
     console.error("Erro ao enviar pedido RT:", error);
     mostrarToast(`Erro ao enviar pedido: ${error.message || "permissão negada"}`, "erro");
@@ -2655,7 +2893,8 @@ async function finalizarPedidoCatalogo() {
   const descontoTxt=desconto>0?`\nDesconto: - R$ ${fmt(desconto)}`:"";
   const freteTxt=freteGratisMinimoPublico>0?`\nFrete: ${frete===0?"Grátis":`R$ ${fmt(frete)}`}`:"";
   const jurosTxt=totalComJuros>total?`\nJuros do cartão: R$ ${fmt(totalComJuros-total)}`:"";
-  const msg = `Olá! Gostaria de fazer o seguinte pedido:\n\n${itensTxt}${cupomTxt}\nSubtotal: R$ ${fmt(subtotal)}${descontoTxt}${freteTxt}${jurosTxt}\n\n*Total: R$ ${fmt(totalComJuros)}*\nForma de pagamento: ${pagsTxt}\n\nNome: ${nome}\nEndereço: ${endereco}`;
+  const trocoTxt=precisaTroco?`\nTroco para: R$ ${fmt(trocoPara)}`:"";
+  const msg = `Olá! Gostaria de fazer o seguinte pedido:\n\n${itensTxt}${cupomTxt}\nSubtotal: R$ ${fmt(subtotal)}${descontoTxt}${freteTxt}${jurosTxt}\n\n*Total: R$ ${fmt(totalComJuros)}*\nForma de pagamento: ${pagsTxt}${trocoTxt}\n\nNome: ${nome}\nEndereço: ${endereco}`;
   if (whatsappLojaPublico) window.location.href = `https://wa.me/${whatsappLojaPublico}?text=${encodeURIComponent(msg)}`;
   else mostrarToast("Pedido enviado! A loja não configurou um WhatsApp.");
 }
@@ -2696,13 +2935,13 @@ Object.assign(window, {
   // Configurações
   definirTema, trocarSenha, atualizarFotoPerfil, removerFotoPerfil,
   salvarNomeLoja, selecionarCorLoja, selecionarFonteLoja, atualizarPreviewLoja, salvarFreteLoja,
-  salvarJurosCartaoLoja,
+  salvarJurosCartaoLoja, salvarHorarioLoja, atualizarCamposHorarioLoja, definirStatusManualLoja, seguirHorarioLoja,
   alternarFreteVenda,
   resetarOrdemMenu, salvarWhatsappLoja, salvarCupomLoja, atualizarCupomCatalogo,
   // Atendimento RT (admin)
   toggleCatalogoProdutoRT, marcarTodosCatalogoRT, desmarcarTodosCatalogoRT, copiarLinkCatalogoRT, marcarPedidoRTAtendido, cancelarPedidoRT, ativarNotificacoesPedidos,
   // Catálogo público (cliente)
-  alterarQtdCatalogo, togglePagamentoCatalogo, onSplitInputCatalogo, finalizarPedidoCatalogo,
+  alterarQtdCatalogo, togglePagamentoCatalogo, onSplitInputCatalogo, finalizarPedidoCatalogo, selecionarCategoriaCatalogo, atualizarTrocoCatalogo,
 });
 
 function renderConfiguracoes() {
@@ -2722,7 +2961,7 @@ function renderConfiguracoes() {
   const fm=document.getElementById("freteGratisMinimo");if(fm)fm.value=Number(lojaConfigAtual.frete_minimo)||"";
   const vf=document.getElementById("valorFreteLoja");if(vf)vf.value=Number(lojaConfigAtual.valor_frete)||"";
   const jc=document.getElementById("jurosCartaoLoja");if(jc)jc.value=Number(lojaConfigAtual.juros_cartao_percentual)||"";
-  renderLojaConfigUI();renderMenuOrderList();
+  renderHorarioLojaConfig();renderLojaConfigUI();renderMenuOrderList();
 }
 
 async function atualizarFotoPerfil(input) {

@@ -133,8 +133,10 @@ REVOKE ALL ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUM
 GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB, NUMERIC, NUMERIC) TO anon;
 GRANT EXECUTE ON FUNCTION public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB, NUMERIC, NUMERIC) TO authenticated;
 
-GRANT INSERT ON pedidos_rt TO anon;
-GRANT INSERT, SELECT, UPDATE, DELETE ON pedidos_rt TO authenticated;
+DROP POLICY IF EXISTS "publico_insere_pedidos_rt" ON pedidos_rt;
+DROP POLICY IF EXISTS "autenticado_insere_pedidos_rt" ON pedidos_rt;
+REVOKE INSERT ON pedidos_rt FROM anon, authenticated;
+GRANT SELECT, UPDATE, DELETE ON pedidos_rt TO authenticated;
 
 -- Recria a view pública incluindo fonte e avatar da loja.
 -- IMPORTANTE: novas colunas vão sempre no final, sem remover/reordenar

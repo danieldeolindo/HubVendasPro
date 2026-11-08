@@ -46,15 +46,9 @@ CREATE POLICY "loja_le_pedidos_rt"    ON pedidos_rt FOR SELECT USING (auth.uid()
 CREATE POLICY "loja_atualiza_pedidos_rt" ON pedidos_rt FOR UPDATE USING (auth.uid() = loja_user_id);
 CREATE POLICY "loja_deleta_pedidos_rt" ON pedidos_rt FOR DELETE USING (auth.uid() = loja_user_id);
 
--- Qualquer visitante (sem login, papel "anon") pode CRIAR um pedido,
--- mas nunca ler os pedidos de ninguém — só o dono enxerga (política acima).
-CREATE POLICY "publico_insere_pedidos_rt" ON pedidos_rt FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "autenticado_insere_pedidos_rt" ON pedidos_rt FOR INSERT TO authenticated WITH CHECK (true);
-
--- Permissões SQL explícitas para o catálogo público inserir pedidos.
--- A leitura continua protegida pelo RLS e não é liberada para anon.
-GRANT INSERT ON pedidos_rt TO anon;
-GRANT INSERT, SELECT, UPDATE, DELETE ON pedidos_rt TO authenticated;
+-- Pedidos são criados pela RPC, que valida a loja e seus horários.
+REVOKE INSERT ON pedidos_rt FROM anon, authenticated;
+GRANT SELECT, UPDATE, DELETE ON pedidos_rt TO authenticated;
 
 -- O catálogo público cria pedidos por esta RPC, sem acesso direto de escrita.
 DROP FUNCTION IF EXISTS public.criar_pedido_rt(UUID, TEXT, TEXT, TEXT, JSONB, NUMERIC, TEXT, JSONB);
