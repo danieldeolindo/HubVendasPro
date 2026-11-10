@@ -96,7 +96,7 @@ BEGIN
   INTO minimo_frete, valor_frete
   FROM config WHERE user_id = p_loja_user_id;
   IF minimo_frete > 0 AND valor_frete > 0
-     AND GREATEST(0, COALESCE(p_subtotal, p_total, 0) - COALESCE(p_desconto, 0)) < minimo_frete THEN
+     AND GREATEST(0, COALESCE(p_subtotal, p_total, 0)) < minimo_frete THEN
     frete_calculado := valor_frete;
   END IF;
   total_calculado := GREATEST(0, COALESCE(p_subtotal, p_total, 0) - COALESCE(p_desconto, 0)) + frete_calculado;

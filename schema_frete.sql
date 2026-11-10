@@ -114,9 +114,7 @@ DECLARE
   preco_produto NUMERIC;
   quantidade_item INTEGER;
   isento_frete_produto BOOLEAN;
-  subtotal_itens_calculado NUMERIC := 0;
   subtotal_elegivel_frete NUMERIC := 0;
-  desconto_elegivel_frete NUMERIC := 0;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM config WHERE user_id = p_loja_user_id) THEN
     RAISE EXCEPTION 'Loja não encontrada';
@@ -196,7 +194,6 @@ BEGIN
       RAISE EXCEPTION 'Produto do pedido não encontrado';
     END IF;
 
-    subtotal_itens_calculado := subtotal_itens_calculado + preco_produto * quantidade_item;
     IF NOT isento_frete_produto THEN
       subtotal_elegivel_frete := subtotal_elegivel_frete + preco_produto * quantidade_item;
     END IF;
@@ -209,15 +206,8 @@ BEGIN
     );
   END LOOP;
 
-  IF subtotal_itens_calculado > 0 THEN
-    desconto_elegivel_frete := ROUND(LEAST(
-      GREATEST(COALESCE(p_desconto, 0), 0),
-      subtotal_itens_calculado
-    ) * subtotal_elegivel_frete / subtotal_itens_calculado, 2);
-  END IF;
-
   IF minimo_frete > 0 AND valor_frete > 0 AND subtotal_elegivel_frete > 0
-     AND GREATEST(0, subtotal_elegivel_frete - desconto_elegivel_frete) < minimo_frete THEN
+     AND subtotal_elegivel_frete < minimo_frete THEN
     frete_calculado := valor_frete;
   END IF;
   total_calculado := GREATEST(0, COALESCE(p_subtotal, p_total, 0) - COALESCE(p_desconto, 0)) + frete_calculado;

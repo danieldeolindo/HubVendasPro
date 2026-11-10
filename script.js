@@ -2714,10 +2714,7 @@ function alterarQtdCatalogo(id, delta) {
 function subtotalCatalogo() { return Object.values(carrinhoCatalogo).reduce((s,i)=>s+i.preco*i.quantidade,0); }
 function descontoCatalogo() { return cupomCatalogoAplicado ? subtotalCatalogo() * (cupomCatalogo.percentual / 100) : 0; }
 function subtotalElegivelFreteCatalogo() {
-  const subtotal=subtotalCatalogo();
-  if (subtotal<=0) return 0;
-  const elegivel=Object.values(carrinhoCatalogo).reduce((s,i)=>s+(i.isentoFrete?0:i.preco*i.quantidade),0);
-  return Math.round(Math.max(0,elegivel-descontoCatalogo()*(elegivel/subtotal))*100)/100;
+  return Object.values(carrinhoCatalogo).reduce((s,i)=>s+(i.isentoFrete?0:i.preco*i.quantidade),0);
 }
 function freteCatalogo() {
   if (freteGratisMinimoPublico<=0 || valorFretePublico<=0) return 0;
