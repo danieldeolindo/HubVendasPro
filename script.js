@@ -28,12 +28,16 @@ let splitPagamento         = {};
 let tipoDesconto           = "pct";
 let categoriaAtiva         = "todas";
 let filtroDashboard        = "hoje";
+let modalDashboardAtual    = "";
+let filtroModalDashboard  = "7dias";
+let datasModalDashboard   = { inicio: "", fim: "" };
 let filtroHistorico        = "hoje";
 let tipoHistorico          = "completo";
 let filtroRelatorio        = "hoje";
 let vendaComprovanteAtual  = null;
 
 let editarVendaIdx     = null;
+let editarVendaOrigem  = "vendas";
 let editarItens        = [];
 let editarFrete        = 0;
 let editarPagamentos   = ["dinheiro"];
@@ -44,6 +48,7 @@ let audioContextPedidos = null;
 let audioPedidosLiberado = false;
 let registroServiceWorker = null;
 let pushSubscription = null;
+let aguardandoRecuperacaoSenha = new URLSearchParams(window.location.hash.slice(1)).get("type") === "recovery";
 
 function chaveNotificacoesPedidos() { return usuarioAtual ? `hvp-notificacoes-pedidos-${usuarioAtual.id}` : "hvp-notificacoes-pedidos"; }
 function notificacoesPedidosAtivas() { return localStorage.getItem(chaveNotificacoesPedidos()) === "1"; }
@@ -51,6 +56,7 @@ function fecharModaisAbertos() {
   document.querySelectorAll(".modal-overlay:not(.hidden)").forEach(modal => modal.classList.add("hidden"));
   vendaComprovanteAtual = null;
   editarVendaIdx = null;
+  editarVendaOrigem = "vendas";
 }
 window.addEventListener("popstate", fecharModaisAbertos);
 
@@ -64,7 +70,7 @@ const MENU_PADRAO = [
   { id: "clientes",      icon: ic("users"),     label: "Clientes",     bnav: "Clientes"  },
   { id: "historico",     icon: ic("clipboard"), label: "Histórico",    bnav: "Histórico" },
   { id: "atendimento",   icon: ic("signal"),    label: "Atendimento RT", bnav: "Atend.RT"},
-  { id: "configuracoes", icon: ic("settings"),  label: "Configurações", bnav: "Config"   },
+  { id: "configuracoes", icon: ic("settings-gear"), label: "Configurações", bnav: "Config" },
 ];
 
 /* ─── Toast ─── */
@@ -815,6 +821,89 @@ function navegarPara(pagina) {
 ───────────────────────────────────────── */
 function toggleSenha(id,el) { const i=document.getElementById(id); if (i.type==="password"){i.type="text";el.innerHTML=ic("eye-off");}else{i.type="password";el.innerHTML=ic("eye");} }
 
+function mostrarTelaLogin() {
+  document.getElementById("login").classList.remove("hidden");
+  document.getElementById("registro").classList.add("hidden");
+  document.getElementById("recuperacaoSenha").classList.add("hidden");
+}
+
+function mostrarFormularioNovaSenha() {
+  aguardandoRecuperacaoSenha = true;
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("registro").classList.add("hidden");
+  document.getElementById("recuperacaoSenha").classList.remove("hidden");
+  document.getElementById("formularioRecuperacao").classList.add("hidden");
+  document.getElementById("formularioNovaSenha").classList.remove("hidden");
+}
+
+function mostrarRecuperacaoSenha() {
+  document.getElementById("emailRecuperacao").value = document.getElementById("email").value.trim();
+  document.getElementById("formularioRecuperacao").classList.remove("hidden");
+  document.getElementById("formularioNovaSenha").classList.add("hidden");
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("registro").classList.add("hidden");
+  document.getElementById("recuperacaoSenha").classList.remove("hidden");
+}
+
+async function enviarEmailRecuperacao() {
+  const email = document.getElementById("emailRecuperacao").value.trim();
+  if (!email) { mostrarToast("Informe seu e-mail.","erro"); return; }
+  if (!emailValido(email)) { mostrarToast("Email inválido.","erro"); return; }
+  mostrarLoading("Enviando link...");
+  const redirectTo = `${window.location.origin}${window.location.pathname}`;
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) {
+      mostrarToast(`Não foi possível enviar o link: ${error.message}`,"erro");
+      return;
+    }
+    mostrarToast("Se o e-mail estiver cadastrado, você receberá o link de recuperação.");
+    voltarLogin();
+  } catch (error) {
+    mostrarToast(`Não foi possível enviar o link: ${error instanceof Error ? error.message : String(error)}`,"erro");
+  } finally {
+    esconderLoading();
+  }
+}
+
+async function redefinirSenha() {
+  const senha = document.getElementById("novaSenhaRecuperacao").value;
+  const confirmacao = document.getElementById("confirmarNovaSenhaRecuperacao").value;
+  if (!senha || !confirmacao) { mostrarToast("Preencha os dois campos de senha.","erro"); return; }
+  if (senha.length < 6) { mostrarToast("A senha deve ter pelo menos 6 caracteres.","erro"); return; }
+  if (senha !== confirmacao) { mostrarToast("As senhas não coincidem.","erro"); return; }
+  mostrarLoading("Atualizando senha...");
+  let updateError;
+  try {
+    const { error } = await supabase.auth.updateUser({ password: senha });
+    updateError = error;
+  } catch (error) {
+    esconderLoading();
+    mostrarToast(`Não foi possível atualizar a senha: ${error instanceof Error ? error.message : String(error)}`,"erro");
+    return;
+  }
+  if (updateError) {
+    esconderLoading();
+    mostrarToast(`Não foi possível atualizar a senha: ${updateError.message}`,"erro");
+    return;
+  }
+  let signOutError;
+  try {
+    const result = await supabase.auth.signOut();
+    signOutError = result.error;
+  } catch (error) {
+    signOutError = error;
+  }
+  esconderLoading();
+  document.getElementById("novaSenhaRecuperacao").value = "";
+  document.getElementById("confirmarNovaSenhaRecuperacao").value = "";
+  aguardandoRecuperacaoSenha = false;
+  mostrarTelaLogin();
+  mostrarToast(signOutError
+    ? `Senha atualizada, mas não foi possível encerrar a sessão: ${signOutError instanceof Error ? signOutError.message : signOutError.message || String(signOutError)}`
+    : "Senha atualizada com sucesso!");
+}
+
 async function login() {
   const email=document.getElementById("email").value.trim(), senha=document.getElementById("senha").value;
   if (!email||!senha){mostrarToast("Preencha email e senha.","erro");return;}
@@ -856,8 +945,8 @@ async function logout() {
   await supabase.auth.signOut();
 }
 
-function mostrarRegistro(){document.getElementById("login").classList.add("hidden");document.getElementById("registro").classList.remove("hidden");}
-function voltarLogin(){document.getElementById("registro").classList.add("hidden");document.getElementById("login").classList.remove("hidden");}
+function mostrarRegistro(){document.getElementById("login").classList.add("hidden");document.getElementById("recuperacaoSenha").classList.add("hidden");document.getElementById("registro").classList.remove("hidden");}
+function voltarLogin(){mostrarTelaLogin();}
 
 // ─── Função chamada ao fazer logout ou sessão expirada ───
 function limparSessao() {
@@ -876,18 +965,24 @@ function limparSessao() {
   if (sb) sb.style.display="none"; if (tb) tb.style.display="none";
   document.getElementById("login").classList.remove("hidden");
   document.getElementById("registro").classList.add("hidden");
+  document.getElementById("recuperacaoSenha").classList.add("hidden");
 }
 
 // ─── Observador apenas para SIGNED_OUT ───
 // Login e sessão inicial são tratados por iniciarApp() abaixo
 supabase.auth.onAuthStateChange((event, session) => {
   if (event === "SIGNED_OUT") limparSessao();
+  if (event === "PASSWORD_RECOVERY") mostrarFormularioNovaSenha();
 });
 
 // ─── Inicialização: verifica sessão existente uma única vez ───
 async function iniciarApp() {
   mostrarLoading("Carregando...");
   try {
+    if (aguardandoRecuperacaoSenha) {
+      mostrarFormularioNovaSenha();
+      return;
+    }
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       usuarioAtual = session.user;
@@ -920,6 +1015,8 @@ const LOJA_CATALOGO_ID = detectarCatalogoId();
 
 // Inicia quando o DOM estiver pronto
 document.addEventListener("DOMContentLoaded", () => {
+  const mobileSettingsIcon = document.querySelector('[data-mobile-page="configuracoes"] span:first-child');
+  if (mobileSettingsIcon) mobileSettingsIcon.innerHTML = ic("settings-gear");
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js").then(registro => {
       registroServiceWorker = registro;
@@ -1777,30 +1874,65 @@ function renderHistorico() {
   const filtradasVendas = tipoHistorico === "art" ? [] : historico.filter(v=>vendaNoIntervalo(v,iv)&&correspondeBusca(v));
   const filtradasArt = tipoHistorico === "vendas" ? [] : pedidosRT.filter(v=>vendaNoIntervalo(v,iv)&&correspondeBusca(v));
   const filtradas = [...filtradasVendas, ...filtradasArt].sort((a,b)=>(parseDDMMYYYY(b.data)?.getTime()||0)-(parseDDMMYYYY(a.data)?.getTime()||0));
-  if (!filtradas.length){lista.innerHTML=`<div class="empty-state"><span>${ic("clipboard")}</span>Nenhuma venda neste período.</div>`;document.getElementById("balanco").innerText="0,00";return;}
+  if (!filtradas.length){lista.innerHTML=`<div class="empty-state"><span>${ic("clipboard")}</span>Nenhum pedido neste período.</div>`;document.getElementById("balanco").innerText="0,00";return;}
   filtradas.forEach(venda=>{
-    if (venda.origem === "art") {
-      if (!venda.cancelada && venda.status === "atendido") balanco += venda.total || 0;
-      const card = document.createElement("div");
-      card.innerHTML = renderPedidoRTCard(venda);
-      lista.appendChild(card.firstElementChild);
-      return;
+    const isCatalogo = venda.origem === "art";
+    if (isCatalogo ? (!venda.cancelada && venda.status === "atendido") : !venda.cancelada) {
+      balanco += Number(venda.total) || 0;
     }
-    const index=historico.indexOf(venda);
-    if (!venda.cancelada) balanco+=venda.total;
-    let itensHtml="";
-    venda.itens.forEach(item=>{const sku=item.skuId?`#${String(item.skuId).padStart(4,"0")} `:"";itensHtml+=typeof item==="string"?`<span class="item-historico">${item}</span>`:`<span class="item-historico">${sku}${item.nome} <strong>x${item.quantidade}</strong></span>`;});
-    const pagHtml=venda.cancelada?renderTagsPagamento(venda):`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${renderTagsPagamento(venda)}</div>`;
-    const clienteLinha=venda.clienteNome?`<p class="venda-cliente">${ic("user")} ${venda.clienteNome}</p>`:"";
-    const acaoHtml=venda.cancelada?`<span class="tag tag-cancelada">Cancelada</span>`:`<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn-invalidar" onclick="cancelarVenda(${index})">Cancelar venda</button><button class="btn-editar-venda" onclick="abrirEditarVenda(${index})">${ic("edit")} Editar</button><button class="btn-copiar" onclick="abrirComprovanteHistorico(${index})">${ic("printer")} Comprovante</button></div>`;
-    const descHtml=venda.desconto>0?`<p class="venda-desconto-info">Subtotal R$ ${fmt(venda.subtotal||venda.total)} <span>– Desconto R$ ${fmt(venda.desconto)}</span></p>`:"";
-    const freteHtml=Number(venda.frete)>0?`<p class="venda-frete-info">Frete: R$ ${fmt(venda.frete)}</p>`:"";
-    const hora=venda.hora?` às ${venda.hora}`:"";
-    const card=document.createElement("div");card.className=`venda-card${venda.cancelada?" cancelada":""}`;
-    card.innerHTML=`<div class="venda-header"><div class="venda-header-esq"><span class="venda-data">${venda.data}${hora}</span><span class="tag tag-origem-vendas">Venda</span>${venda.cancelada?`<span class="tag tag-cancelada">Cancelada</span>`:""}</div><span class="venda-total">R$ ${fmt(venda.total)}</span></div>${clienteLinha}${descHtml}${freteHtml}<div class="venda-pagamento">${pagHtml}</div><div class="itens-historico">${itensHtml}</div><div style="margin-top:10px">${acaoHtml}</div>`;
-    lista.appendChild(card);
+    const origemLista = isCatalogo ? pedidosRT : historico;
+    lista.appendChild(renderCardHistorico(venda, origemLista.indexOf(venda), isCatalogo));
   });
   document.getElementById("balanco").innerText=fmt(balanco);
+}
+
+function renderCardHistorico(venda, index, isCatalogo) {
+  const cancelada = venda.cancelada || (isCatalogo && venda.status === "cancelado");
+  const clienteNome = venda.clienteNome || venda.cliente_nome || "";
+  const clienteTelefone = venda.clienteTelefone || venda.cliente_telefone || "";
+  const itensHtml = (Array.isArray(venda.itens) ? venda.itens : []).map(item => {
+    if (typeof item === "string") return `<span class="item-historico">${escaparHTML(item)}</span>`;
+    const produto = item.produtoId ? produtos.find(p => p.firestoreId === item.produtoId) : null;
+    const skuId = item.skuId || produto?.skuId;
+    const sku = skuId ? `#${String(skuId).padStart(4,"0")} ` : "";
+    return `<span class="item-historico">${escaparHTML(sku + (item.nome || ""))} <strong>x${Number(item.quantidade) || 1}</strong></span>`;
+  }).join("");
+  const statusHtml = isCatalogo && !cancelada
+    ? venda.status === "atendido" ? `<span class="tag tag-concluido">Concluído</span>` : `<span class="tag tag-pendente">Pendente</span>`
+    : "";
+  const clienteLinha = clienteNome || clienteTelefone
+    ? `<p class="venda-cliente">${ic("user")} ${escaparHTML(clienteNome || "Cliente")}${clienteTelefone ? ` · ${escaparHTML(clienteTelefone)}` : ""}</p>`
+    : "";
+  const descHtml = Number(venda.desconto) > 0
+    ? `<p class="venda-desconto-info">Subtotal R$ ${fmt(Number(venda.subtotal) || Number(venda.total) || 0)} <span>– Desconto R$ ${fmt(Number(venda.desconto))}</span></p>`
+    : "";
+  const freteHtml = Number(venda.frete) > 0 ? `<p class="venda-frete-info">Frete: R$ ${fmt(Number(venda.frete))}</p>` : "";
+  const pagamentosHtml = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${renderTagsPagamento(venda)}</div>`;
+  const acaoHtml = cancelada
+    ? `<span class="tag tag-cancelada">Cancelada</span>`
+    : `<div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn-invalidar" onclick="${isCatalogo ? `cancelarPedidoRT('${escaparHTML(venda.id)}')` : `cancelarVenda(${index})`}">Cancelar</button>
+        <button class="btn-editar-venda" onclick="abrirEditarVenda(${index}, '${isCatalogo ? "catalogo" : "vendas"}')">${ic("edit")} Editar</button>
+        <button class="btn-copiar" onclick="${isCatalogo ? `abrirComprovanteRT('${escaparHTML(venda.id)}')` : `abrirComprovanteHistorico(${index})`}">${ic("printer")} Comprovante</button>
+      </div>`;
+  const card = document.createElement("div");
+  card.className = `venda-card${cancelada ? " cancelada" : ""}`;
+  const hora = venda.hora ? ` às ${escaparHTML(venda.hora)}` : "";
+  card.innerHTML = `
+    <div class="venda-header">
+      <div class="venda-header-esq">
+        <span class="venda-data">${escaparHTML(venda.data || "")}${hora}</span>
+        <span class="tag ${isCatalogo ? "tag-origem-catalogo" : "tag-origem-vendas"}">${isCatalogo ? "Catálogo" : "Venda"}</span>
+        ${statusHtml}
+        ${cancelada ? `<span class="tag tag-cancelada">Cancelada</span>` : ""}
+      </div>
+      <span class="venda-total">R$ ${fmt(Number(venda.total) || 0)}</span>
+    </div>
+    ${clienteLinha}${descHtml}${freteHtml}
+    <div class="venda-pagamento">${pagamentosHtml}</div>
+    <div class="itens-historico">${itensHtml}</div>
+    <div style="margin-top:10px">${acaoHtml}</div>`;
+  return card;
 }
 
 function abrirComprovanteHistorico(index){mostrarComprovante(historico[index]);}
@@ -1861,15 +1993,21 @@ async function cancelarVenda(index){
 /* ─────────────────────────────────────────
    EDITAR VENDA
 ───────────────────────────────────────── */
-function abrirEditarVenda(index) {
-  const v=historico[index]; if (!v||v.cancelada) return;
+function abrirEditarVenda(index, origem = "vendas") {
+  editarVendaOrigem = origem;
+  const v=origem === "catalogo" ? pedidosRT[index] : historico[index];
+  if (!v || v.cancelada || (origem === "catalogo" && v.status === "cancelado")) return;
   editarVendaIdx=index;
   document.getElementById("senhaAdminEditar").value="";
+  document.getElementById("editarVendaTitulo").textContent=origem === "catalogo" ? "Editar pedido" : "Editar venda";
+  document.getElementById("editarVendaDescricao").textContent=origem === "catalogo"
+    ? "Digite a senha de administrador para editar este pedido do catálogo."
+    : "Digite a senha de administrador para editar esta venda.";
   document.getElementById("editarVendaStep1").classList.remove("hidden");
   document.getElementById("editarVendaStep2").classList.add("hidden");
   document.getElementById("modalEditarVenda").classList.remove("hidden");
 }
-function fecharEditarVenda(){document.getElementById("modalEditarVenda").classList.add("hidden");editarVendaIdx=null;}
+function fecharEditarVenda(){document.getElementById("modalEditarVenda").classList.add("hidden");editarVendaIdx=null;editarVendaOrigem="vendas";}
 
 async function confirmarSenhaAdmin() {
   const senha=document.getElementById("senhaAdminEditar").value;
@@ -1888,10 +2026,15 @@ async function confirmarSenhaAdmin() {
 }
 
 function _carregarFormEditarVenda() {
-  const v=historico[editarVendaIdx];
+  const v=editarVendaOrigem === "catalogo" ? pedidosRT[editarVendaIdx] : historico[editarVendaIdx];
   editarFrete=Number(v.frete)||0;
-  editarItens=v.itens.map(i=>typeof i==="string"?{nome:i,skuId:null,quantidade:1,preco:0}:{...i});
-  editarPagamentos=v.pagamentos?Object.keys(v.pagamentos).filter(k=>v.pagamentos[k]>0):[(v.pagamento||"dinheiro")];
+  editarItens=(v.itens||[]).map(i=>{
+    if (typeof i==="string") return {nome:i,skuId:null,quantidade:1,preco:0};
+    const produto=i.produtoId?produtos.find(p=>p.firestoreId===i.produtoId):null;
+    return {...i,skuId:i.skuId||produto?.skuId};
+  });
+  const formasSalvas=Object.entries(v.pagamentos||{}).filter(([forma,valor])=>ICONE_PAGAMENTO_HTML[forma]&&Number(valor)>0).map(([forma])=>forma);
+  editarPagamentos=formasSalvas.length?formasSalvas:[String(v.pagamento||"dinheiro").split("+")[0]];
   editarSplit={...v.pagamentos}||{};
   const totalBaseSalvo=Math.max(0,Number(v.subtotal??v.total)-Number(v.desconto||0))+editarFrete;
   const jurosSalvos=Math.max(0,Number(v.total)-totalBaseSalvo);
@@ -1906,11 +2049,11 @@ function _carregarFormEditarVenda() {
   if (sel){sel.innerHTML=`<option value="">+ Adicionar produto ao pedido...</option>`+produtos.map(p=>`<option value="${p.id}">#${String(p.skuId).padStart(4,"0")} ${p.nome} – R$ ${fmt(p.preco)}</option>`).join("");sel.onchange=()=>{if(sel.value){_adicionarItemEditar(Number(sel.value));sel.value="";}};} 
   renderEditarItens(); renderEditSplit(); atualizarEditarTotal();
 }
-function _adicionarItemEditar(prodId) { const p=produtos.find(p=>p.id===prodId); if (!p) return; const ex=editarItens.find(i=>i.nome===p.nome); if (ex){ex.quantidade++;} else editarItens.push({nome:p.nome,skuId:p.skuId,quantidade:1,preco:p.preco,fotoUrl:p.fotoUrl||""}); renderEditarItens(); atualizarEditarTotal(); }
+function _adicionarItemEditar(prodId) { const p=produtos.find(p=>p.id===prodId); if (!p) return; const ex=editarItens.find(i=>i.nome===p.nome); if (ex){ex.quantidade++;} else editarItens.push({produtoId:p.firestoreId,nome:p.nome,skuId:p.skuId,quantidade:1,preco:p.preco,fotoUrl:p.fotoUrl||""}); renderEditarItens(); atualizarEditarTotal(); }
 function renderEditarItens() {
   const lista=document.getElementById("editarItensList"); if (!lista) return;
   if (!editarItens.length){lista.innerHTML=`<p style="color:var(--text3);font-size:13px;padding:8px 0">Nenhum item. Adicione produtos acima.</p>`;return;}
-  lista.innerHTML=editarItens.map((item,i)=>`<div class="editar-item-row"><span class="editar-item-nome">${item.skuId?`#${String(item.skuId).padStart(4,"0")} `:""}${item.nome}</span><div style="display:flex;align-items:center;gap:6px;flex-shrink:0"><button class="btn-qtd sm" onclick="editarItemQtd(${i},-1)">−</button><span style="min-width:24px;text-align:center;font-family:var(--mono);font-size:14px">${item.quantidade}</span><button class="btn-qtd sm" onclick="editarItemQtd(${i},+1)">+</button><span style="font-family:var(--mono);font-size:13px;color:var(--green-dark);min-width:70px;text-align:right">R$ ${fmt(item.preco*item.quantidade)}</span><button class="carrinho-item-del" onclick="removerItemEditar(${i})">${ic("x")}</button></div></div>`).join("");
+  lista.innerHTML=editarItens.map((item,i)=>`<div class="editar-item-row"><span class="editar-item-nome">${item.skuId?`#${String(item.skuId).padStart(4,"0")} `:""}${escaparHTML(item.nome)}</span><div style="display:flex;align-items:center;gap:6px;flex-shrink:0"><button class="btn-qtd sm" onclick="editarItemQtd(${i},-1)">−</button><span style="min-width:24px;text-align:center;font-family:var(--mono);font-size:14px">${item.quantidade}</span><button class="btn-qtd sm" onclick="editarItemQtd(${i},+1)">+</button><span style="font-family:var(--mono);font-size:13px;color:var(--green-dark);min-width:70px;text-align:right">R$ ${fmt(item.preco*item.quantidade)}</span><button class="carrinho-item-del" onclick="removerItemEditar(${i})">${ic("x")}</button></div></div>`).join("");
 }
 function editarItemQtd(i,delta){editarItens[i].quantidade=Math.max(1,editarItens[i].quantidade+delta);renderEditarItens();atualizarEditarTotal();}
 function removerItemEditar(i){editarItens.splice(i,1);renderEditarItens();atualizarEditarTotal();}
@@ -1927,17 +2070,32 @@ async function salvarEdicaoVenda(){
   const sub=_calcEditSubtotal(), desc=_calcEditDesconto(sub), totalBase=Math.max(0,sub-desc)+editarFrete;
   if (editarPagamentos.length>1){const soma=editarPagamentos.slice(0,-1).reduce((a,t)=>a+(parseFloat(editarSplit[t])||0),0);if(soma>totalBase+.005){mostrarToast("A soma dos pagamentos ultrapassa o total.","erro");return;}}
   const {pagamentos,total}=calcularPagamentosComJuros(editarPagamentos,editarSplit,totalBase);
-  const v=historico[editarVendaIdx];
+  const v=editarVendaOrigem === "catalogo" ? pedidosRT[editarVendaIdx] : historico[editarVendaIdx];
   const dadosAtualizados={...v,itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]};
   try {
-    if (v.firestoreId) await fbAtualizarVenda(v.firestoreId,{itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]});
+    if (editarVendaOrigem === "catalogo") {
+      const { error } = await supabase.from("pedidos_rt").update({
+        itens: editarItens,
+        subtotal: sub,
+        desconto: desc,
+        frete: editarFrete,
+        total,
+        pagamentos,
+        pagamento: editarPagamentos[0],
+      }).eq("id", v.id).select("id").single();
+      if (error) throw new Error("Erro ao atualizar pedido: " + error.message);
+    } else if (v.firestoreId) {
+      await fbAtualizarVenda(v.firestoreId,{itens:editarItens,subtotal:sub,desconto:desc,frete:editarFrete,total,pagamentos,pagamento:editarPagamentos[0]});
+    }
   } catch(e) {
     console.error("Erro ao salvar edição da venda:", e);
     mostrarToast(e.message, "erro");
     return;
   }
-  historico[editarVendaIdx]=dadosAtualizados;
-  fecharEditarVenda();renderHistorico();mostrarToast("Venda atualizada!");
+  if (editarVendaOrigem === "catalogo") pedidosRT[editarVendaIdx]=dadosAtualizados;
+  else historico[editarVendaIdx]=dadosAtualizados;
+  const mensagem = editarVendaOrigem === "catalogo" ? "Pedido atualizado!" : "Venda atualizada!";
+  fecharEditarVenda();renderHistorico();mostrarToast(mensagem);
 }
 
 /* ─────────────────────────────────────────
@@ -1976,6 +2134,267 @@ function renderDashboard() {
   document.getElementById("dashPagamentos").innerHTML=[{key:"dinheiro",label:`${ic("cash")} Dinheiro`},{key:"cartao",label:`${ic("card")} Cartão`},{key:"pix",label:`${ic("zap")} Pix`}].map(({key,label})=>{const w=Math.round((pp[key]/tpp)*100);return `<div class="pag-row"><span class="pag-nome">${label}</span><div class="pag-bar-wrap"><div class="pag-bar" style="width:${w}%"></div></div><span class="pag-val">R$ ${fmt(pp[key])}</span></div>`;}).join("");
   const qtdVendas=vt.filter(v=>v.origem!=="art").length, qtdArt=vt.filter(v=>v.origem==="art").length;
   document.getElementById("dashOrigem").innerHTML=`<div class="pag-row"><span class="pag-nome">${ic("cart")} Vendas</span><div class="pag-bar-wrap"><div class="pag-bar" style="width:${Math.round((qtdVendas/(vt.length||1))*100)}%"></div></div><span class="pag-val">${qtdVendas} pedidos</span></div><div class="pag-row"><span class="pag-nome">${ic("signal")} ART</span><div class="pag-bar-wrap"><div class="pag-bar" style="width:${Math.round((qtdArt/(vt.length||1))*100)}%"></div></div><span class="pag-val">${qtdArt} pedidos</span></div>`;
+}
+
+function abrirModalDashboard(tipo) {
+  const titulos = {
+    vendas: "Vendas no período",
+    pagamentos: "Por forma de pagamento",
+    produtos: "Produtos mais vendidos",
+    origem: "Origem dos pedidos",
+  };
+  if (!titulos[tipo]) return;
+  modalDashboardAtual = tipo;
+  document.getElementById("dashboardModalTitle").textContent = titulos[tipo];
+  document.getElementById("dashboardModalPeriodo").value = filtroModalDashboard;
+  document.getElementById("dashboardModalDatas").classList.toggle("hidden", filtroModalDashboard !== "personalizado");
+  if (filtroModalDashboard === "personalizado") preencherDatasModalDashboard();
+  document.getElementById("modalDashboardGrafico").classList.remove("hidden");
+  renderModalDashboard();
+}
+
+function fecharModalDashboard() {
+  document.getElementById("modalDashboardGrafico").classList.add("hidden");
+  modalDashboardAtual = "";
+}
+
+function dataParaInput(data) {
+  return `${data.getFullYear()}-${String(data.getMonth()+1).padStart(2,"0")}-${String(data.getDate()).padStart(2,"0")}`;
+}
+
+function preencherDatasModalDashboard() {
+  const fim = new Date();
+  fim.setHours(0,0,0,0);
+  const inicio = new Date(fim);
+  inicio.setDate(inicio.getDate()-6);
+  const campoInicio = document.getElementById("dashboardModalDataInicio");
+  const campoFim = document.getElementById("dashboardModalDataFim");
+  if (!datasModalDashboard.inicio) datasModalDashboard.inicio = dataParaInput(inicio);
+  if (!datasModalDashboard.fim) datasModalDashboard.fim = dataParaInput(fim);
+  campoInicio.value = datasModalDashboard.inicio;
+  campoFim.value = datasModalDashboard.fim;
+}
+
+function alterarPeriodoModalDashboard(periodo) {
+  filtroModalDashboard = periodo;
+  const datas = document.getElementById("dashboardModalDatas");
+  datas.classList.toggle("hidden", periodo !== "personalizado");
+  if (periodo === "personalizado") {
+    preencherDatasModalDashboard();
+    return;
+  }
+  renderModalDashboard();
+}
+
+function aplicarPeriodoModalDashboard() {
+  const inicio = document.getElementById("dashboardModalDataInicio").value;
+  const fim = document.getElementById("dashboardModalDataFim").value;
+  if (!inicio || !fim) { mostrarToast("Informe as duas datas do período.","erro"); return; }
+  const dataInicio = new Date(`${inicio}T00:00:00`);
+  const dataFim = new Date(`${fim}T00:00:00`);
+  if (Number.isNaN(dataInicio.getTime()) || Number.isNaN(dataFim.getTime())) {
+    mostrarToast("Informe um período válido.","erro");
+    return;
+  }
+  if (dataInicio > dataFim) { mostrarToast("A data inicial deve ser anterior à data final.","erro"); return; }
+  datasModalDashboard = { inicio, fim };
+  renderModalDashboard();
+}
+
+function registrosConcluidosDashboard() {
+  return todosRegistros().filter(v => !v.cancelada && (v.origem !== "art" || v.status === "atendido"));
+}
+
+function resolverPeriodoModalDashboard() {
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
+  if (filtroModalDashboard === "personalizado") {
+    const inicio = datasModalDashboard.inicio;
+    const fim = datasModalDashboard.fim;
+    if (!inicio || !fim) return { erro: "Selecione as datas e aplique o período." };
+    return { de: new Date(`${inicio}T00:00:00`), ate: new Date(`${fim}T00:00:00`) };
+  }
+  const dias = { "7dias": 7, "30dias": 30, "90dias": 90 }[filtroModalDashboard];
+  if (dias) {
+    const de = new Date(hoje);
+    de.setDate(de.getDate()-dias+1);
+    return { de, ate: hoje };
+  }
+  const datas = registrosConcluidosDashboard()
+    .map(v => parseDDMMYYYY(v.data))
+    .filter(data => data && !Number.isNaN(data.getTime()))
+    .sort((a,b) => a-b);
+  return { de: datas[0] || hoje, ate: hoje };
+}
+
+function chaveDataGrafico(data, mensal) {
+  const mes = String(data.getMonth()+1).padStart(2,"0");
+  if (mensal) return `${data.getFullYear()}-${mes}`;
+  return `${data.getFullYear()}-${mes}-${String(data.getDate()).padStart(2,"0")}`;
+}
+
+function serieVendasPorData(registros, periodo) {
+  const diasNoPeriodo = Math.floor((periodo.ate-periodo.de)/86400000)+1;
+  const mensal = diasNoPeriodo > 180;
+  const valores = new Map();
+  const cursor = mensal
+    ? new Date(periodo.de.getFullYear(), periodo.de.getMonth(), 1)
+    : new Date(periodo.de);
+  cursor.setHours(0,0,0,0);
+  for (let i=0; cursor<=periodo.ate && i<2400; i++) {
+    const data = new Date(cursor);
+    const key = chaveDataGrafico(data, mensal);
+    valores.set(key, 0);
+    if (mensal) cursor.setMonth(cursor.getMonth()+1);
+    else cursor.setDate(cursor.getDate()+1);
+  }
+  registros.forEach(v => {
+    const data = parseDDMMYYYY(v.data);
+    if (!data) return;
+    const key = chaveDataGrafico(data, mensal);
+    if (valores.has(key)) valores.set(key, valores.get(key)+(Number(v.total)||0));
+  });
+  return [...valores].map(([key,valor]) => {
+    const partes = key.split("-").map(Number);
+    const data = mensal ? new Date(partes[0],partes[1]-1,1) : new Date(partes[0],partes[1]-1,partes[2]);
+    return {
+      label: data.toLocaleDateString("pt-BR", mensal ? { month:"short", year:"2-digit" } : { day:"2-digit", month:"2-digit" }),
+      valor,
+    };
+  });
+}
+
+function renderGraficoLinhaVendas(registros, periodo) {
+  const serie = serieVendasPorData(registros, periodo);
+  if (!serie.some(item => item.valor > 0)) return `<p class="dashboard-chart-empty">Nenhuma venda concluída neste período.</p>`;
+  const width=900, height=360, left=72, right=24, top=24, bottom=58;
+  const plotWidth=width-left-right, plotHeight=height-top-bottom;
+  const max=Math.max(...serie.map(item=>item.valor),1);
+  const pontos=serie.map((item,index)=>{
+    const x=serie.length===1?left+plotWidth/2:left+index*plotWidth/(serie.length-1);
+    const y=top+plotHeight-(item.valor/max)*plotHeight;
+    return { ...item, x, y };
+  });
+  const area=`M ${pontos[0].x} ${top+plotHeight} ${pontos.map(p=>`L ${p.x} ${p.y}`).join(" ")} L ${pontos[pontos.length-1].x} ${top+plotHeight} Z`;
+  const line=pontos.map((p,index)=>`${index?"L":"M"} ${p.x} ${p.y}`).join(" ");
+  const grades=Array.from({length:5},(_,i)=>{
+    const valor=max*(4-i)/4, y=top+plotHeight*i/4;
+    return `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" class="dashboard-chart-gridline"/><text x="${left-10}" y="${y+4}" text-anchor="end" class="dashboard-chart-axis-label">R$ ${fmt(valor)}</text>`;
+  }).join("");
+  const intervaloRotulo=Math.max(1,Math.ceil(pontos.length/8));
+  const rotulos=pontos.map((p,index)=>
+    index%intervaloRotulo===0||index===pontos.length-1
+      ? `<text x="${p.x}" y="${height-22}" text-anchor="middle" class="dashboard-chart-axis-label">${escaparHTML(p.label)}</text>`
+      : ""
+  ).join("");
+  const marcadores=pontos.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="3.5" class="dashboard-chart-point"><title>${escaparHTML(p.label)}: R$ ${fmt(p.valor)}</title></circle>`).join("");
+  return `<div class="dashboard-chart-scroll"><svg class="dashboard-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gráfico de linhas do valor vendido por dia">
+    ${grades}<path d="${area}" class="dashboard-chart-area"/><path d="${line}" class="dashboard-chart-line"/>${marcadores}${rotulos}
+  </svg></div>`;
+}
+
+function renderGraficoPizza(itens, formatarValor, descricao) {
+  const dados=itens.filter(item=>Number(item.valor)>0);
+  const total=dados.reduce((soma,item)=>soma+Number(item.valor),0);
+  if (!total) return `<p class="dashboard-chart-empty">Nenhum dado disponível neste período.</p>`;
+  const cores=["#00bf63","#3b82f6","#f59e0b","#8b5cf6","#f43f5e"];
+  const cx=170,cy=160,raio=118;
+  let angulo=-Math.PI/2;
+  const fatias=dados.length===1
+    ? `<circle cx="${cx}" cy="${cy}" r="${raio}" fill="${cores[0]}"><title>${escaparHTML(dados[0].label)}: ${escaparHTML(formatarValor(dados[0].valor))}</title></circle>`
+    : dados.map((item,index)=>{
+        const proximo=angulo+(Number(item.valor)/total)*Math.PI*2;
+        const x1=cx+raio*Math.cos(angulo),y1=cy+raio*Math.sin(angulo);
+        const x2=cx+raio*Math.cos(proximo),y2=cy+raio*Math.sin(proximo);
+        const grande=proximo-angulo>Math.PI?1:0;
+        const d=`M ${cx} ${cy} L ${x1} ${y1} A ${raio} ${raio} 0 ${grande} 1 ${x2} ${y2} Z`;
+        angulo=proximo;
+        return `<path d="${d}" fill="${cores[index%cores.length]}" stroke="var(--card-bg)" stroke-width="2"><title>${escaparHTML(item.label)}: ${escaparHTML(formatarValor(item.valor))}</title></path>`;
+      }).join("");
+  const legenda=dados.map((item,index)=>{
+    const percentual=Math.round(Number(item.valor)/total*100);
+    return `<li><span class="dashboard-chart-legend-color" style="background:${cores[index%cores.length]}"></span><span class="dashboard-chart-legend-name">${escaparHTML(item.label)}</span><strong>${escaparHTML(formatarValor(item.valor))}</strong><small>${percentual}%</small></li>`;
+  }).join("");
+  return `<div class="dashboard-chart-pie-layout"><svg class="dashboard-chart-pie" viewBox="0 0 340 320" role="img" aria-label="${escaparHTML(descricao)}">${fatias}</svg><ul class="dashboard-chart-legend">${legenda}</ul></div>`;
+}
+
+function dadosPagamentoDashboard(registros) {
+  const valores={dinheiro:0,cartao:0,pix:0};
+  registros.forEach(v=>{
+    const pagamentos=Object.entries(v.pagamentos||{}).filter(([tipo,valor])=>Object.prototype.hasOwnProperty.call(valores,tipo)&&Number(valor)>0);
+    if (pagamentos.length) pagamentos.forEach(([tipo,valor])=>{valores[tipo]+=Number(valor)||0;});
+    else {
+      const tipo=String(v.pagamento||"dinheiro").split("+")[0];
+      if (Object.prototype.hasOwnProperty.call(valores,tipo)) valores[tipo]+=Number(v.total)||0;
+    }
+  });
+  const nomes={dinheiro:"Dinheiro",cartao:"Cartão",pix:"Pix"};
+  return Object.entries(valores).map(([tipo,valor])=>({label:nomes[tipo],valor}));
+}
+
+function dadosProdutosDashboard(registros) {
+  const produtosVendidos=new Map();
+  registros.forEach(v=>(Array.isArray(v.itens)?v.itens:[]).forEach(item=>{
+    const nome=typeof item==="string"?item:(item?.nome||"");
+    if (!nome) return;
+    const quantidade=typeof item==="string"?1:Math.max(0,Number(item.quantidade)||0);
+    const valor=typeof item==="string"?0:(Number(item.preco)||0)*quantidade;
+    const registro=produtosVendidos.get(nome)||{label:nome,valor:0,faturamento:0};
+    registro.valor+=quantidade;
+    registro.faturamento+=valor;
+    produtosVendidos.set(nome,registro);
+  }));
+  return [...produtosVendidos.values()].sort((a,b)=>b.valor-a.valor).slice(0,10);
+}
+
+function renderGraficoColunasProdutos(registros) {
+  const itens=dadosProdutosDashboard(registros);
+  if (!itens.length) return `<p class="dashboard-chart-empty">Nenhum produto vendido neste período.</p>`;
+  const width=Math.max(820,itens.length*100+100),height=410,left=58,right=24,top=24,bottom=112;
+  const plotWidth=width-left-right,plotHeight=height-top-bottom;
+  const max=Math.max(...itens.map(item=>item.valor),1);
+  const slot=plotWidth/itens.length;
+  const grades=Array.from({length:5},(_,i)=>{
+    const valor=max*(4-i)/4,y=top+plotHeight*i/4;
+    return `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" class="dashboard-chart-gridline"/><text x="${left-10}" y="${y+4}" text-anchor="end" class="dashboard-chart-axis-label">${fmt(valor)}</text>`;
+  }).join("");
+  const colunas=itens.map((item,index)=>{
+    const x=left+slot*index+slot*.2;
+    const largura=slot*.6;
+    const altura=item.valor/max*plotHeight;
+    const y=top+plotHeight-altura;
+    const label=item.label.length>16?`${item.label.slice(0,15)}…`:item.label;
+    const titulo=`${item.label}: ${item.valor} un. · R$ ${fmt(item.faturamento)}`;
+    return `<g><rect x="${x}" y="${y}" width="${largura}" height="${altura}" rx="5" class="dashboard-chart-column"><title>${escaparHTML(titulo)}</title></rect><text x="${x+largura/2}" y="${height-bottom+24}" text-anchor="start" transform="rotate(32 ${x+largura/2} ${height-bottom+24})" class="dashboard-chart-axis-label">${escaparHTML(label)}</text><text x="${x+largura/2}" y="${y-8}" text-anchor="middle" class="dashboard-chart-axis-label">${item.valor}</text></g>`;
+  }).join("");
+  return `<div class="dashboard-chart-scroll"><svg class="dashboard-chart-svg dashboard-chart-columns" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gráfico de colunas dos produtos mais vendidos">${grades}${colunas}</svg></div>`;
+}
+
+function renderModalDashboard() {
+  if (!modalDashboardAtual) return;
+  const periodo=resolverPeriodoModalDashboard();
+  const conteudo=document.getElementById("dashboardModalConteudo");
+  if (periodo.erro) {
+    conteudo.innerHTML=`<p class="dashboard-chart-empty">${escaparHTML(periodo.erro)}</p>`;
+    return;
+  }
+  const inicio=periodo.de.toLocaleDateString("pt-BR");
+  const fim=periodo.ate.toLocaleDateString("pt-BR");
+  document.getElementById("dashboardModalSubtitle").textContent=`${inicio} até ${fim}`;
+  const registros=registrosConcluidosDashboard().filter(v=>vendaNoIntervalo(v,periodo));
+  if (modalDashboardAtual==="vendas") conteudo.innerHTML=renderGraficoLinhaVendas(registros,periodo);
+  if (modalDashboardAtual==="pagamentos") {
+    conteudo.innerHTML=renderGraficoPizza(dadosPagamentoDashboard(registros),valor=>`R$ ${fmt(valor)}`,"Gráfico de pizza por forma de pagamento");
+  }
+  if (modalDashboardAtual==="produtos") conteudo.innerHTML=renderGraficoColunasProdutos(registros);
+  if (modalDashboardAtual==="origem") {
+    const vendas=registros.filter(v=>v.origem!=="art").length;
+    const catalogo=registros.filter(v=>v.origem==="art").length;
+    conteudo.innerHTML=renderGraficoPizza([
+      {label:"Vendas",valor:vendas},
+      {label:"Catálogo",valor:catalogo},
+    ],valor=>`${valor} ${valor===1?"pedido":"pedidos"}`,"Gráfico de pizza por origem dos pedidos");
+  }
 }
 
 function renderEstoque() {
@@ -2901,9 +3320,12 @@ async function finalizarPedidoCatalogo() {
 ───────────────────────────────────────── */
 Object.assign(window, {
   // Auth
-  login, registrar, logout, mostrarRegistro, voltarLogin, toggleSenha,
+  login, registrar, logout, mostrarRegistro, voltarLogin, mostrarRecuperacaoSenha,
+  enviarEmailRecuperacao, redefinirSenha, toggleSenha,
   // Navegação
   navegarPara,
+  // Gráficos do dashboard
+  abrirModalDashboard, fecharModalDashboard, alterarPeriodoModalDashboard, aplicarPeriodoModalDashboard,
   // Vendas
   togglePagamento, onSplitInput, setTipoDesconto, finalizarPedido, abrirModalNovoCliente, fecharModalNovoCliente, salvarClienteModal, abrirComprovanteRT,
   toggleResumoMobile, toggleConfigSection,
